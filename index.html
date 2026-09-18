@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-device="desktop" data-touch="0">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>宿迁职业技术学院作息时间表</title>
+<style>
+  :root{
+    --am:#2563eb;      /* 上午正课 */
+    --noon:#f59e0b;    /* 午休 */
+    --pm:#0ea5e9;      /* 下午正课 */
+    --eve:#10b981;     /* 晚休 */
+    --night:#8b5cf6;   /* 晚自习 */
+    --close:#ef4444;   /* 关寝 */
+    --now:#e11d48;     /* 当前时间 */
+    --ink:#0f172a;
+    --ink2:#475569;
+    --line:#e2e8f0;
+    --card:#ffffff;
+    --guide:#0f172a;
+    --pin:#f59e0b;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:#f1f5f9;color:var(--ink);
+    font-family:"Microsoft YaHei","PingFang SC","Hiragino Sans GB","Source Han Sans SC",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%;
+    -webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none;
+    -webkit-touch-callout:none;
+  }
+  img{-webkit-user-drag:none}
+  ::selection{background:transparent}
+  ::-moz-selection{background:transparent}
+  .page{max-width:1280px;margin:0 auto;padding:28px 26px 40px}
+
+  /* ---------- 头部 ---------- */
+  .hero{
+    background:linear-gradient(135deg,#1e293b 0%,#0f172a 55%,#1e3a8a 100%);
+    color:#fff;border-radius:16px;padding:22px 26px;box-shadow:0 10px 30px rgba(15,23,42,.18);
+    display:flex;gap:18px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;
+  }
+  .hero h1{margin:0 0 6px;font-size:25px;letter-spacing:.5px}
+  .brandwrap{display:flex;align-items:center;gap:14px;min-width:0}
+  .brand{width:56px;height:56px;flex:0 0 56px;display:block;filter:drop-shadow(0 3px 8px rgba(0,0,0,.4))}
+  .hero .sub{margin:0;font-size:13px;color:#c7d2fe;line-height:1.7}
+  .legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:14px}
+  .legend span{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:#e2e8f0}
+  .legend i{width:14px;height:14px;border-radius:4px;display:inline-block}
+  .devbox{display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex:0 0 auto}
+  .devtag{font-size:12px;color:#c7d2fe;white-space:nowrap}
+  .devtag b{color:#fff}
+  .devbtn{
+    font:inherit;font-size:12.5px;padding:7px 14px;border-radius:999px;cursor:pointer;
+    background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.35);
+    transition:background .15s ease;white-space:nowrap;
+  }
+  .devbtn:hover{background:rgba(255,255,255,.24)}
+
+
+  /* ---------- 当前状态条 ---------- */
+  .nowbar{
+    background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:13px 16px;margin:22px 0 12px;box-shadow:0 3px 14px rgba(15,23,42,.06);
+    display:flex;gap:16px;align-items:center;flex-wrap:wrap;
+  }
+  .nowclock{flex:0 0 auto;display:flex;align-items:baseline;gap:8px}
+  .nowclock #nowClock{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--now);letter-spacing:.5px;line-height:1}
+  .nowclock em{font-style:normal;font-size:12px;color:var(--ink2)}
+  .nowlist{flex:1 1 420px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;min-width:0}
+  .nowitem{border:1px solid var(--line);border-left:4px solid var(--tc);border-radius:9px;padding:7px 10px;background:#fbfdff;min-width:0}
+  .nowitem.live{background:#fff5f6;border-color:#fecdd3}
+  .nowitem b{display:block;font-size:12px;color:var(--tc);font-weight:700}
+  .nowitem span{display:block;font-size:12px;color:var(--ink2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .nowitem.live span{color:#9f1239;font-weight:700}
+  .nowitem .cd{display:block;font-style:normal;font-size:11px;font-weight:700;margin-top:4px;
+               letter-spacing:.2px;font-variant-numeric:tabular-nums}
+  .nowitem .cd.end{color:#be123c}      /* 正在上课：还有多久下课 */
+  .nowitem .cd.next{color:#1d4ed8}     /* 课间/午休/晚休：还有多久上课 */
+  .nowitem .cd.prep{color:#64748b}     /* 晚自习结束到关寝之间 */
+  .daynote{flex:1 1 100%;font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:6px 10px}
+
+  /* ---------- 甘特总览 ---------- */
+  .gantt{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 18px 16px;box-shadow:0 3px 14px rgba(15,23,42,.06)}
+  .g-scroll{overflow:visible}
+  .g-grid{position:relative}
+  .g-readout{height:26px}
+  .g-row{display:flex;align-items:stretch}
+  .g-name{width:96px;flex:0 0 96px;font-size:13.5px;font-weight:700;display:flex;align-items:center;color:var(--ink)}
+  .g-area{position:relative;flex:1 1 auto;min-width:0}
+  .g-close{width:86px;flex:0 0 86px;display:flex;align-items:center;justify-content:flex-end;gap:5px}
+  .g-head .g-area{height:22px}
+  .g-head{border-bottom:1px solid var(--line);margin-bottom:6px}
+  .tick{position:absolute;top:2px;font-size:11px;color:#94a3b8;transform:translateX(-50%);white-space:nowrap}
+  .tick.edge{transform:translateX(-100%)}
+  .g-lane{height:44px;align-items:center}
+  .g-lane .g-area{height:100%;border-top:1px dashed #eef2f7}
+  .g-lane:first-of-type .g-area{border-top:none}
+  .grid{position:absolute;top:0;bottom:0;width:1px;background:#f1f5f9}
+  .grid.major{background:#e6ecf4}
+  .bar{
+    position:absolute;top:9px;height:26px;border-radius:7px;z-index:1;
+    display:flex;align-items:center;justify-content:center;
+    color:#fff;font-size:11.5px;font-weight:700;letter-spacing:.3px;
+    overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.16);
+    transition:transform .12s ease, box-shadow .12s ease;
+  }
+  .bar.am{background:var(--am)}
+  .bar.noon{background:var(--noon)}
+  .bar.pm{background:var(--pm)}
+  .bar.eve{background:var(--eve)}
+  .bar.night{background:var(--night)}
+  .bar.now{outline:3px solid var(--now);outline-offset:2px;animation:pulse 2.2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(225,29,72,.42)}50%{box-shadow:0 0 0 7px rgba(225,29,72,0)}}
+  .close-line{position:absolute;top:2px;bottom:2px;width:0;border-left:2px dotted var(--close);opacity:.75;z-index:2}
+  .close-dot{position:absolute;top:50%;width:9px;height:9px;border-radius:50%;background:var(--close);transform:translate(-50%,-50%);box-shadow:0 0 0 3px rgba(239,68,68,.16);z-index:2}
+  .close-val{font-size:12px;font-weight:700;color:var(--close);white-space:nowrap}
+
+  /* ---- 现在线 ---- */
+  .nowline{position:absolute;top:22px;bottom:0;width:2px;background:var(--now);z-index:4;margin-left:-1px}
+  .nowflag{
+    position:absolute;top:-20px;left:50%;transform:translateX(-50%);
+    background:var(--now);color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;
+    white-space:nowrap;box-shadow:0 2px 6px rgba(225,29,72,.35);
+  }
+  .nowflag.flip{transform:translateX(calc(-100% + 1px))}
+
+  /* ---- 悬停预览轴 ---- */
+  .guide{position:absolute;top:0;bottom:0;width:0;z-index:6;pointer-events:none;display:none}
+  .guide.on{display:block}
+  .guide .gline{position:absolute;top:22px;bottom:0;width:2px;margin-left:-1px;background:var(--guide);opacity:.5}
+  .guide .gbubble{
+    position:absolute;top:1px;left:0;transform:translateX(-50%);
+    background:var(--guide);color:#fff;font-size:12px;font-weight:700;
+    font-variant-numeric:tabular-nums;padding:3px 9px;border-radius:999px;white-space:nowrap;
+    box-shadow:0 2px 8px rgba(15,23,42,.28);
+  }
+  .guide .gbubble.flip{transform:translateX(calc(-100% - 4px))}
+  .guide .gbubble.right{transform:translateX(4px)}
+  .gchip{
+    position:absolute;left:11px;transform:translateY(-50%);
+    font-size:11px;line-height:1.5;padding:2px 8px;border-radius:999px;white-space:nowrap;
+    background:rgba(255,255,255,.96);border:1px solid #cbd5e1;color:#0f172a;
+    box-shadow:0 1px 5px rgba(15,23,42,.14);font-variant-numeric:tabular-nums;
+  }
+  .gchip.flip{left:auto;right:11px}
+  .gchip.cat-gap,.gchip.cat-off,.gchip.cat-prep{color:#64748b;border-color:#e2e8f0}
+  .gchip.cat-closed{color:#b91c1c;border-color:#fecaca;background:#fff5f5}
+  .guide.pinned .gline{opacity:.95;background:var(--pin)}
+  .guide.pinned .gbubble{background:var(--pin);color:#3b2405;box-shadow:0 2px 10px rgba(245,158,11,.5)}
+  .gpin-close{pointer-events:auto;cursor:pointer;display:inline-block;margin-left:6px;padding:0 5px;border-radius:999px;background:rgba(255,255,255,.45);font-size:11px}
+  .gpin-close:hover{background:#fff}
+  .ghost{position:absolute;top:22px;bottom:0;width:0;margin-left:-1px;border-left:2px dashed #94a3b8;z-index:5;display:none;pointer-events:none}
+  .ghost.on{display:block}
+  .ghost b{
+    position:absolute;top:-20px;left:50%;transform:translateX(-50%);
+    background:#94a3b8;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;
+    white-space:nowrap;font-variant-numeric:tabular-nums;
+  }
+  .ghost b.flip{transform:translateX(calc(-100% + 1px))}
+  .g-lane .g-name{cursor:pointer;white-space:nowrap;transition:color .15s ease}
+  .g-lane .g-name::after{content:"↓";margin-left:5px;font-size:11px;color:#cbd5e1;transition:color .15s ease}
+  .g-lane .g-name:hover,.g-lane .g-name:hover::after{color:#1d4ed8}
+  .card.flash{animation:flashcard 1.2s ease 2}
+  @keyframes flashcard{
+    0%,100%{box-shadow:0 3px 14px rgba(15,23,42,.06)}
+    50%{box-shadow:0 0 0 8px var(--flash,rgba(37,99,235,.35))}
+  }
+  .g-hint{display:none;font-size:12px;color:var(--ink2);margin-top:9px;text-align:center}
+
+  /* ---------- 分方向时间轴 ---------- */
+  .cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 3px 14px rgba(15,23,42,.06);display:flex;flex-direction:column}
+  .card-h{padding:12px 14px;color:#fff}
+  .card-h .t{font-size:15px;font-weight:700;letter-spacing:.4px}
+  .card-h .m{font-size:11.5px;opacity:.92;margin-top:3px}
+  .card-h .cd{font-size:11.5px;font-weight:700;margin-top:2px;opacity:.97;letter-spacing:.2px;
+              font-variant-numeric:tabular-nums}
+  .vtl{padding:12px 14px 14px;margin:0;list-style:none;flex:1}
+  .vtl li{position:relative;padding:0 0 11px 20px;border-left:2px solid var(--line);margin-left:5px;border-radius:0 6px 6px 0}
+  .vtl li:last-child{border-left-color:transparent;padding-bottom:0}
+  .vtl .dot{position:absolute;left:-6px;top:4px;width:10px;height:10px;border-radius:50%;background:#cbd5e1;box-shadow:0 0 0 3px #fff}
+  .vtl .d-am{background:var(--am)} .vtl .d-noon{background:var(--noon)} .vtl .d-pm{background:var(--pm)}
+  .vtl .d-eve{background:var(--eve)} .vtl .d-night{background:var(--night)} .vtl .d-close{background:var(--close)}
+  .vtl .time{display:block;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.2px}
+  .vtl .lbl{display:block;font-size:11.5px;color:var(--ink2);margin-top:1px}
+  .vtl .dur{font-style:normal;font-weight:400;font-size:11px;color:#94a3b8;letter-spacing:0}
+  .vtl li.hl .time{color:var(--close)}
+  .vtl li.hl .lbl{color:var(--close);font-weight:600}
+  .vtl li.live{background:#fff5f6;box-shadow:inset 3px 0 0 var(--now)}
+  .vtl li.live .time{color:var(--now)}
+  .vtl li.live .lbl{color:var(--now);font-weight:700}
+  .vtl li.live .lbl::after{content:attr(data-suffix);font-size:10.5px}
+
+  footer{margin-top:22px;font-size:12px;color:#64748b;line-height:1.9;border-top:1px dashed var(--line);padding-top:12px}
+  footer b{color:var(--ink2)}
+
+  /* ---------- 竖排时间轴（手机版专用） ---------- */
+  .vt{display:none;background:var(--card);border:1px solid var(--line);border-radius:14px;
+      padding:12px 10px;box-shadow:0 3px 14px rgba(15,23,42,.06);--vt-h:700px}
+  .vt-head{display:flex;align-items:flex-end;position:sticky;top:0;z-index:10;
+           background:var(--card);padding-top:6px;border-bottom:1px solid var(--line)}
+  .vt-pad{width:42px;flex:0 0 42px}
+  .vt-heads{flex:1;display:flex;min-width:0}
+  .vt-head-cell{flex:1;text-align:center;padding:0 2px 8px;min-width:0;cursor:pointer}
+  .vt-head-cell b{display:block;font-size:12px;font-weight:700;color:var(--ink);white-space:nowrap}
+  .vt-head-cell:active b{color:#1d4ed8}
+  .vt-body{display:flex;position:relative;height:var(--vt-h)}
+  .vt-axis{width:42px;flex:0 0 42px;position:relative}
+  .vt-hr{position:relative}
+  .vt-hr span{position:sticky;top:33px;display:block;text-align:right;padding-right:6px;
+              font-size:10px;line-height:1.2;color:#94a3b8;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .vt-endtick{position:absolute;right:6px;bottom:-6px;font-size:10px;color:#94a3b8;
+              font-variant-numeric:tabular-nums;white-space:nowrap}
+  .vt-plot{flex:1;position:relative;display:flex;min-width:0}
+  .vt-col{flex:1;position:relative;min-width:0;border-left:1px dashed #eef2f7}
+  .vt-col:first-child{border-left:1px solid var(--line)}
+  .vt-hline{position:absolute;left:0;right:0;height:1px;background:#f1f5f9}
+  .vt-hline.major{background:#e6ecf4}
+  .vt-blk{position:absolute;left:3px;right:3px;border-radius:6px;color:#fff;font-size:11px;font-weight:700;
+          display:flex;align-items:center;justify-content:center;overflow:hidden;
+          box-shadow:0 1px 3px rgba(15,23,42,.16);z-index:1}
+  .vt-blk.am{background:var(--am)} .vt-blk.noon{background:var(--noon)} .vt-blk.pm{background:var(--pm)}
+  .vt-blk.eve{background:var(--eve)} .vt-blk.night{background:var(--night)}
+  .vt-blk.now{outline:3px solid var(--now);outline-offset:1px;animation:pulse 2.2s ease-in-out infinite}
+  .vt-blk.hot{outline:3px solid var(--pin);outline-offset:1px}
+  .vt-close{position:absolute;left:0;right:0;border-top:2px dotted var(--close);opacity:.75;z-index:2}
+  .vt-chip{position:absolute;left:2px;right:2px;display:none;margin-top:5px;text-align:center;
+           background:rgba(255,255,255,.97);border:1.5px solid var(--pin);border-radius:7px;
+           padding:2px 1px;box-shadow:0 2px 7px rgba(15,23,42,.22);z-index:7;pointer-events:none}
+  .vt-chip.on{display:block}
+  .vt-chip.up{transform:translateY(calc(-100% - 10px))}
+  .vt-chip b{display:block;font-size:10px;font-weight:700;color:#0f172a;white-space:nowrap;
+             overflow:hidden;text-overflow:ellipsis}
+  .vt-chip i{display:block;font-style:normal;font-size:9px;color:#64748b;white-space:nowrap}
+  .vt-close-tag{position:absolute;left:50%;transform:translateX(-50%);margin-top:3px;
+                font-size:9.5px;font-weight:700;color:#b91c1c;white-space:nowrap;
+                background:rgba(255,255,255,.92);border-radius:999px;padding:1px 5px;
+                z-index:3;pointer-events:none;font-variant-numeric:tabular-nums}
+  .vt-now,.vt-guide{position:absolute;left:0;right:0;height:2px;margin-top:-1px;display:none;pointer-events:none}
+  .vt-now{background:var(--now);z-index:4}
+  .vt-guide{background:var(--pin);z-index:6}
+  .vt-now.on,.vt-guide.on{display:block}
+  .vt-flag{position:absolute;left:2px;top:50%;transform:translateY(-50%);background:var(--now);color:#fff;
+           font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap;
+           font-variant-numeric:tabular-nums;box-shadow:0 2px 6px rgba(225,29,72,.4);pointer-events:auto}
+  .vt-guide .vt-flag{background:var(--pin);color:#3b2405;box-shadow:0 2px 8px rgba(245,158,11,.5)}
+  .vt-flag .vx{cursor:pointer;margin-left:5px;padding:0 4px;border-radius:999px;background:rgba(255,255,255,.45)}
+  .vt-hint{font-size:11.5px;color:var(--ink2);text-align:center;margin-top:9px}
+  html[data-device="mobile"] .vt{display:block}
+  html[data-device="mobile"] .gantt{display:none}
+
+  /* ---------- 回到顶部（手机版） ---------- */
+  .totop{
+    display:flex;position:fixed;right:14px;bottom:calc(18px + env(safe-area-inset-bottom, 0px));
+    z-index:60;width:46px;height:46px;border-radius:50%;border:none;cursor:pointer;
+    align-items:center;justify-content:center;color:#fff;
+    background:rgba(15,23,42,.82);
+    box-shadow:0 6px 18px rgba(15,23,42,.35);
+    opacity:0;transform:translateY(10px) scale(.9);pointer-events:none;
+    transition:opacity .2s ease, transform .2s ease, background .15s ease;
+  }
+  .totop.on{opacity:1;transform:none;pointer-events:auto}
+  .totop:active{background:rgba(29,78,216,.95);transform:scale(.92)}
+
+  /* ================= 手机版 ================= */
+  html[data-device="mobile"] .page{padding:14px 12px 26px}
+  html[data-device="mobile"] .hero{padding:16px 15px;border-radius:13px;gap:12px}
+  html[data-device="mobile"] .hero h1{font-size:19px}
+  html[data-device="mobile"] .brandwrap{gap:10px;align-items:flex-start}
+  html[data-device="mobile"] .brand{width:44px;height:44px;flex:0 0 44px;margin-top:2px}
+  html[data-device="mobile"] .hero .sub{font-size:12px}
+  html[data-device="mobile"] .legend{gap:6px 14px;margin-top:11px}
+  html[data-device="mobile"] .legend span{font-size:12px}
+  html[data-device="mobile"] .devbox{align-items:flex-start;width:100%;flex-direction:row;justify-content:space-between}
+  html[data-device="mobile"] .nowbar{padding:11px 12px;gap:11px;border-radius:13px}
+  html[data-device="mobile"] .nowclock #nowClock{font-size:22px}
+  html[data-device="mobile"] .nowlist{grid-template-columns:repeat(2,minmax(0,1fr));flex:1 1 100%}
+  html[data-device="mobile"] .nowitem span{white-space:normal}
+  html[data-device="mobile"] .nowitem .cd{font-size:11.5px}
+  html[data-device="mobile"] .gantt{padding:11px 12px 13px}
+  html[data-device="mobile"] .g-scroll{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+  html[data-device="mobile"] .g-grid{min-width:840px}
+  /* 横向滚动时冻结左侧“学院名称”列 */
+  html[data-device="mobile"] .g-name{
+    position:sticky;left:0;z-index:8;background:var(--card);
+    box-shadow:6px 0 10px -8px rgba(15,23,42,.45);
+    width:78px;flex:0 0 78px;font-size:12.5px;
+  }
+  /* 名称格需撑满整行高度，否则白色底只盖住文字那一小块，课块会从上下漏出来 */
+  html[data-device="mobile"] .g-lane .g-name{align-self:stretch}
+  html[data-device="mobile"] .g-hint{display:block}
+  html[data-device="mobile"] .cards{grid-template-columns:1fr;gap:12px}
+  html[data-device="mobile"] .vtl .time{font-size:13px}
+  html[data-device="mobile"] .vtl .lbl{font-size:12px}
+  html[data-device="mobile"] .vtl .dur{font-size:11.5px}
+  html[data-device="mobile"] footer{font-size:11.5px}
+
+  @media (max-width:1080px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media (max-width:700px){.cards{grid-template-columns:1fr}.nowlist{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+  @media print{
+    body{background:#fff}
+    .page{max-width:none;padding:0}
+    .hero,.card,.gantt,.nowbar{box-shadow:none;break-inside:avoid}
+    .devbox,.g-hint,.guide,.totop{display:none !important}
+    html[data-device="mobile"] .g-grid{min-width:0}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="hero">
+    <div class="brandwrap">
+      <img class="brand" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAACgCAMAAAC8EZcfAAAAYFBMVEW1yOAWT6FCbKp0lb1uksOCncfBzeb+/v4hW6UAAAD///8bVqT///////////////////////8YUZ03ZqhNd7HM2euKpsva5vF3mMakutnl7PRbgrUTTp0lV51kiLmZs9TCeUymAAAAIHRSTlP//////////f8ACv8vz49PbK///////////////////6knlPcAAArJSURBVHja1Z3Zdts4DEDhJSO1qJuEErXZkv7/L0ebbYIEN1uyG555aDMnzg1AgCAIoPBrjfWbXat8NGyCtiImbAq3AiSsQffHstZghCfpJpDPaX0pa/6KRvkqQAJ3BftrrCsogXwBoEI3sY0s3/M63df8hZmTQm4LqNHNbFeoRFkK6AL5KCLE893oFrjEvu6QDzNCPN6VzgNHKO+MsYTwEN5El0SsK2M8IkTj/Y3HWxgfQoRwviveI3Q3MU6aXhBXA1TwRuElT6xJjHcprgM4812llzy5ZikOiIGEECq+dfCuiOF6hmDxDdp1/NSmlFAvC2TZuBEXPYcQgp/PI75G1h9dnqUpohDjf4hpluVdUUufnmchPgN447PhQXHO2gkKU2XhtNKsK6RLzyGE4Ffvl4WvrLtslFhqrOuXhv+bZhU0rp3oUzOEiI/bfdBlAhm4SX5UmAPj40KEh9RbFnsbHQvc5kXzICEE8OkfLKv2Eky3MO6yquTM2UsILr7PT0a9skovGMk3651BPN39TRzgYh6mepsq3aWPLRRtYXGJDkKI4+uzR/EWRdeWjWglhBg+mY9OBXVDtboZ86t46co4QojgK1K0bzDvV5Yl0p43FQuhBfDPH4OvzIVDaNl8drSjcxZu8QpTiFfCMMDZv+h8dYZuA9gfCpDDqosuQ8cWGD03mFqevU0I4OL/NL7CJRYU9LBo4OD+ddLCIPyyEIJtA1K+7uL6eVlheLjy0LoQRRW6DTlA4/xwbz88syGLdH6TyAMJIYBPZsKhLcb7Luvg2hYib4IMBSwGTPhc28/0GurGdQmeIWS2IXAbUONrUzth27tiexshzoSlTsgoGXwKLp32KD7cF6QOHaeNJsPTiVMyePncavLc4Jo9auJHu6Ww2xAMBdMNSExRFwe20nfHhJbIDOmnic6rZDAFqHrAo8Yksr2CqXsz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" alt="宿迁职业技术学院校徽">
+      <div>
+        <h1>宿迁职业技术学院作息时间表</h1>
+        <div class="legend" id="legend"></div>
+      </div>
+    </div>
+    <div class="devbox">
+      <button class="devbtn" id="devBtn" type="button">切换为手机版</button>
+    </div>
+  </header>
+
+  <div class="nowbar" id="nowBar"></div>
+  <div class="gantt">
+    <div class="g-scroll">
+      <div class="g-grid" id="gGrid"><div class="g-readout"></div></div>
+    </div>
+    <div class="g-hint">← 左右滑动查看完整时间轴（学院名称列已固定），轻点可钉住该时刻 →</div>
+  </div>
+
+  <div class="vt" id="vtWrap">
+    <div class="vt-head"><div class="vt-pad"></div><div class="vt-heads" id="vtHeads"></div></div>
+    <div class="vt-body" id="vtBody">
+      <div class="vt-axis" id="vtAxis"></div>
+      <div class="vt-plot" id="vtPlot"></div>
+    </div>
+    <div class="vt-hint">轻点时间轴任意位置可钉住该时刻（点 ✕ 或按 Esc 取消）</div>
+  </div>
+
+  <div class="cards" id="cards"></div>
+
+  <footer><b>说明：</b>现在时间按本机时间计算，每 20 秒自动刷新；非教学日（周末、假期）请以学校实际通知为准。</footer>
+</div>
+
+<button class="totop" id="toTop" type="button" aria-label="回到顶部" title="回到顶部">
+  <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor"
+       stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M12 19V5M5 12l7-7 7 7"/>
+  </svg>
+</button>
+
+<script>
+/* ===================== 基础数据 ===================== */
+var START = 7*60+30, END = 22*60, SPAN = END-START;
+function toMin(t){ var a = t.split(':'); return (+a[0])*60 + (+a[1]); }
+function pct(m){ return (m-START)/SPAN*100; }
+function pad(n){ return String(n).padStart(2,'0'); }
+function fmt(m){ return pad(Math.floor(m/60)) + ':' + pad(m%60); }
+function dur(m){
+  var h = Math.floor(m/60), mm = m%60;
+  if (!h) return mm + '分钟';
+  return h + '小时' + (mm ? mm + '分' : '');
+}
+
+var ROWS  = ['第一节课','第二节课','第三节课','第四节课','午休','第五节课','第六节课','第七节课','第八节课','晚休','晚一','晚二','晚三'];
+var MID   = {'第一节课':'第一节','第二节课':'第二节','第三节课':'第三节','第四节课':'第四节','午休':'午休',
+             '第五节课':'第五节','第六节课':'第六节','第七节课':'第七节','第八节课':'第八节','晚休':'晚休',
+             '晚一':'晚一','晚二':'晚二','晚三':'晚三'};
+var CAT   = {'第一节课':'am','第二节课':'am','第三节课':'am','第四节课':'am','午休':'noon',
+             '第五节课':'pm','第六节课':'pm','第七节课':'pm','第八节课':'pm','晚休':'eve',
+             '晚一':'night','晚二':'night','晚三':'night'};
+var SHORT = {'第一节课':'1','第二节课':'2','第三节课':'3','第四节课':'4','午休':'午休',
+             '第五节课':'5','第六节课':'6','第七节课':'7','第八节课':'8','晚休':'晚休',
+             '晚一':'晚1','晚二':'晚2','晚三':'晚3'};
+var CATNAME = {am:'上午正课', noon:'午休', pm:'下午正课', eve:'晚休', night:'晚自习', close:'关寝'};
+
+var TRACKS = [
+  { name:'信息设计', close:'21:30', accent:'#2563eb', ink:'#ffffff', flash:'rgba(37,99,235,.42)',
+    head:'linear-gradient(135deg,#1d4ed8,#3b82f6)',
+    times:['8:00-8:45','8:55-9:40','9:50-10:35','10:45-11:30','11:30-14:00','14:00-14:45','14:55-15:40','15:50-16:35','16:45-17:30','17:30-18:30','18:30-19:15','19:25-20:10','20:20-21:00'] },
+  { name:'信息基础', close:'21:10', accent:'#64748b', ink:'#1e293b', flash:'rgba(100,116,139,.45)',
+    head:'linear-gradient(135deg,#f8fafc,#cbd5e1)',
+    times:['8:00-8:45','8:55-9:40','9:50-10:35','10:45-11:30','11:30-13:30','13:30-14:15','14:25-15:10','15:20-16:05','16:15-17:00','17:00-18:10','18:10-18:55','19:05-19:50','20:00-20:40'] },
+  { name:'通识教育', close:'21:40', accent:'#dc2626', ink:'#ffffff', flash:'rgba(220,38,38,.42)',
+    head:'linear-gradient(135deg,#b91c1c,#ef4444)',
+    times:['8:30-9:15','9:25-10:10','10:20-11:05','11:15-12:00','12:00-14:20','14:20-15:05','15:15-16:00','16:10-16:55','17:05-17:50','17:50-18:40','18:40-19:25','19:35-20:20','20:30-21:10'] },
+  { name:'女子教育', close:'21:10', accent:'#ea580c', ink:'#ffffff', flash:'rgba(234,88,12,.42)',
+    head:'linear-gradient(135deg,#c2410c,#f97316)',
+    times:['8:00-8:45','8:55-9:40','9:50-10:35','10:45-11:30','11:30-13:40','13:40-14:25','14:35-15:20','15:30-16:15','16:25-17:10','17:10-18:00','18:00-18:45','18:55-19:40','19:50-20:40'] }
+];
+
+/* 某方向全天连续片段（含课间空档） */
+function buildSegments(t){
+  var raw = ROWS.map(function(r, j){
+    var se = t.times[j].split('-');
+    return { s:toMin(se[0]), e:toMin(se[1]), label:r, cat:CAT[r], row:j };
+  });
+  var out = [];
+  for (var i = 0; i < raw.length; i++){
+    out.push(raw[i]);
+    var nx = raw[i+1];
+    if (nx && nx.s > raw[i].e) out.push({ s:raw[i].e, e:nx.s, label:'课间休息', cat:'gap', row:null });
+  }
+  return out;
+}
+var SEGS = TRACKS.map(buildSegments);
+
+/* 某一时刻该方向在做什么 */
+function stateAt(i, m){
+  var segs = SEGS[i], close = toMin(TRACKS[i].close);
+  if (m < segs[0].s) return { label:'未开课', cat:'off', s:null, e:null, li:null };
+  for (var k = 0; k < segs.length; k++){
+    var g = segs[k];
+    if (m >= g.s && m < g.e) return { label:g.label, cat:g.cat, s:g.s, e:g.e, li:g.row };
+  }
+  var last = segs[segs.length-1];
+  if (m >= last.e && m < close) return { label:'就寝准备', cat:'prep', s:last.e, e:close, li:null };
+  return { label:'已关寝', cat:'closed', s:null, e:null, li:'close' };
+}
+/* 距离下课 / 距离上课 的倒计时
+   - 正在上课        -> 还有 X 下课
+   - 课间/午休/晚休  -> 还有 X 上课（该段结束就是下一节课开始）
+   - 晚自习后至关寝  -> 距关寝 X
+   - 未开课 / 已关寝 -> 不显示 */
+function leftText(mins){
+  if (mins < 60) return mins + ' 分钟';
+  var h = Math.floor(mins / 60), mm = mins % 60;
+  return h + ' 小时' + (mm ? ' ' + mm + ' 分钟' : '');
+}
+function countdown(i, m, secNow){
+  var st = stateAt(i, m);
+  if (st.cat === 'off' || st.cat === 'closed') return null;
+  var secs;
+  if (st.cat === 'prep'){
+    secs = toMin(TRACKS[i].close) * 60 - secNow;
+    return { kind:'prep', text:'距关寝 ' + leftText(Math.max(1, Math.ceil(secs / 60))) };
+  }
+  secs = st.e * 60 - secNow;
+  var txt = leftText(Math.max(1, Math.ceil(secs / 60)));
+  if (st.cat === 'gap' || st.cat === 'noon' || st.cat === 'eve'){
+    return { kind:'next', text:'还有 ' + txt + '上课' };
+  }
+  return { kind:'end', text:'还有 ' + txt + '下课' };
+}
+
+function stateText(st){
+  var name = MID[st.label] || st.label;
+  if (st.s != null && st.e != null) return name + ' ' + fmt(st.s) + '–' + fmt(st.e);
+  return name;
+}
+
+/* ===================== 设备识别与版本切换 ===================== */
+var DEV_KEY = 'sqtc-devmode';
+function safeGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function safeSet(k, v){ try{ localStorage.setItem(k, v); }catch(e){} }
+
+function detectByUA(){
+  var ua = navigator.userAgent || '';
+  var touch = (navigator.maxTouchPoints || 0) > 1;
+  var iPad = /iPad/i.test(ua) || (/Macintosh/i.test(ua) && touch);
+  var tablet = iPad || /Tablet|PlayBook|Silk|Kindle/i.test(ua) || (/Android/i.test(ua) && !/Mobile/i.test(ua));
+  if (tablet) return { device:'desktop', label:'电脑/平板版', touch:true };
+  var phone = /iPhone|iPod|Windows Phone|BlackBerry|Opera Mini|IEMobile/i.test(ua)
+           || (/Android/i.test(ua) && /Mobile/i.test(ua))
+           || (/Mobile/i.test(ua) && !/(iPad|Tablet)/i.test(ua));
+  if (phone) return { device:'mobile', label:'手机版', touch:true };
+  return { device:'desktop', label:'电脑/平板版', touch:touch };
+}
+/* 自动模式：手机一律竖版；桌面/平板（含 exe 窗口）按窗口宽度决定。
+   横排时间轴需要约 1000px 才不拥挤（左侧学院列 96px + 右侧关寝列 86px 是固定的），
+   窗口窄于 1000px 时横排每小时只剩不到 53px，直接改用竖版。 */
+var NARROW_W = 1000;
+function detectAuto(){
+  var byUA = detectByUA();
+  if (byUA.device === 'mobile') return byUA;
+  if ((window.innerWidth || 9999) < NARROW_W){
+    return { device:'mobile', label:'竖版（窗口较窄）', touch:byUA.touch };
+  }
+  return byUA;
+}
+function applyDevice(mode){
+  devMode = mode;
+  var d = (mode === 'auto') ? detectAuto()
+        : (mode === 'mobile' ? { device:'mobile', label:'竖版', touch:true }
+                             : { device:'desktop', label:'横版', touch:true });
+  var html = document.documentElement;
+  html.setAttribute('data-device', d.device);
+  html.setAttribute('data-touch', d.touch ? '1' : '0');
+  var btn = document.getElementById('devBtn');
+  var next = (mode === 'auto') ? 'desktop' : (mode === 'desktop' ? 'mobile' : 'auto');
+  btn.textContent = next === 'desktop' ? '切换为横版'
+                  : (next === 'mobile' ? '切换为竖版' : '恢复自动布局');
+  btn.title = '当前：' + d.label + (mode === 'auto' ? '（跟随窗口自动切换）' : '（手动）');
+  btn.setAttribute('data-next', next);
+}
+var devMode = 'auto';
+function initDevice(){
+  /* 清掉旧版本存下的“手动模式”记忆值：以前点过按钮就会一直卡在手动模式，
+     导致窗口变窄也不再自动切竖版。现在每次打开一律从“自动”开始。 */
+  try { localStorage.removeItem(DEV_KEY); } catch(e){}
+  applyDevice('auto');
+  document.getElementById('devBtn').addEventListener('click', function(){
+    var next = this.getAttribute('data-next');
+    if (next !== 'mobile' && next !== 'desktop') next = 'auto';
+    applyDevice(next);
+    relayout();
+  });
+  /* 自动模式下，窗口变窄/变宽立即切换横竖版 */
+  var rt = null;
+  window.addEventListener('resize', function(){
+    if (devMode !== 'auto') return;
+    clearTimeout(rt);
+    rt = setTimeout(function(){
+      var before = document.documentElement.getAttribute('data-device');
+      applyDevice('auto');
+      if (document.documentElement.getAttribute('data-device') !== before) relayout();
+    }, 150);
+  });
+}
+
+/* ===================== 图例 ===================== */
+document.getElementById('legend').innerHTML =
+  ['am','noon','pm','eve','night','close'].map(function(k){
+    return '<span><i style="background:var(--' + k + ')"></i>' + CATNAME[k] + '</span>';
+  }).join('') + '<span><i style="background:#e11d48"></i>当前时间</span>';
+
+/* ===================== 甘特总览 ===================== */
+var gGrid, laneAreas = [], laneRows = [], laneBars = [], guideEl, guideBubble, guideChips = [], nowLine, nowFlag,
+    ghostEl, ghostBubble, pinned = false, pinMin = null, lastTouch = 0;
+
+function renderGantt(){
+  gGrid = document.getElementById('gGrid');
+  var h = '<div class="g-row g-head"><div class="g-name"></div><div class="g-area">';
+  for (var hr = 8; hr <= 22; hr++){
+    var p = pct(hr*60);
+    h += '<span class="tick' + (p > 95 ? ' edge' : '') + '" style="left:' + p + '%">' + hr + ':00</span>';
+  }
+  h += '</div><div class="g-close"></div></div>';
+
+  TRACKS.forEach(function(t){
+    h += '<div class="g-row g-lane"><div class="g-name">' + t.name + '</div><div class="g-area">';
+    for (var hr = 8; hr <= 22; hr++){
+      h += '<i class="grid major" style="left:' + pct(hr*60) + '%"></i>';
+      if (hr < 22) h += '<i class="grid" style="left:' + pct(hr*60+30) + '%"></i>';
+    }
+    ROWS.forEach(function(r, j){
+      var se = t.times[j].split('-'), s = toMin(se[0]), e = toMin(se[1]);
+      h += '<div class="bar ' + CAT[r] + '" style="left:' + pct(s) + '%;width:' + (pct(e)-pct(s)) + '%"><span>' + SHORT[r] + '</span></div>';
+    });
+    var cp = pct(toMin(t.close));
+    h += '<i class="close-line" style="left:' + cp + '%"></i><i class="close-dot" style="left:' + cp + '%"></i>';
+    h += '</div><div class="g-close"><span class="close-val">关寝 ' + t.close + '</span></div></div>';
+  });
+
+  h += '<div class="nowline" id="nowLine" style="display:none"><span class="nowflag" id="nowFlag">现在</span></div>';
+  h += '<div class="ghost" id="ghost"><b id="ghostBubble">--:--</b></div>';
+  h += '<div class="guide" id="guide"><i class="gline"></i><span class="gbubble" id="guideBubble">--:--</span></div>';
+  gGrid.insertAdjacentHTML('beforeend', h);
+
+  laneAreas = [].slice.call(gGrid.querySelectorAll('.g-lane .g-area'));
+  laneRows  = [].slice.call(gGrid.querySelectorAll('.g-lane'));
+  laneBars  = laneAreas.map(function(a){ return [].slice.call(a.querySelectorAll('.bar')); });
+  guideEl     = document.getElementById('guide');
+  guideBubble = document.getElementById('guideBubble');
+  nowLine     = document.getElementById('nowLine');
+  nowFlag     = document.getElementById('nowFlag');
+  ghostEl     = document.getElementById('ghost');
+  ghostBubble = document.getElementById('ghostBubble');
+
+  guideChips = laneRows.map(function(){
+    var c = document.createElement('span');
+    c.className = 'gchip';
+    guideEl.appendChild(c);
+    return c;
+  });
+}
+
+/* ===================== 分方向时间轴 ===================== */
+var cardItems = [], cardMeta = [], cardCd = [];
+function renderCards(){
+  var el = document.getElementById('cards');
+  el.innerHTML = TRACKS.map(function(t){
+    var items = ROWS.map(function(r, j){
+      var se = t.times[j].split('-').map(toMin);
+      var span = dur(se[1] - se[0]);
+      return '<li><i class="dot d-' + CAT[r] + '"></i>'
+           + '<span class="time">' + t.times[j] + '<i class="dur">（' + span + '）</i></span>'
+           + '<span class="lbl">' + r + '</span></li>';
+    }).join('');
+    var closeLi = '<li class="hl"><i class="dot d-close"></i><span class="time">' + t.close + '</span><span class="lbl">关寝</span></li>';
+    return '<div class="card" style="--flash:' + t.flash + '"><div class="card-h" style="background:' + t.head + ';color:' + t.ink + '">' +
+           '<div class="t">' + t.name + '</div>' +
+           '<div class="m"></div><div class="cd"></div></div>' +
+           '<ul class="vtl">' + items + closeLi + '</ul></div>';
+  }).join('');
+  var cards = [].slice.call(el.querySelectorAll('.card'));
+  cardItems = cards.map(function(c){ return [].slice.call(c.querySelectorAll('.vtl li')); });
+  cardMeta  = cards.map(function(c){ return c.querySelector('.card-h .m'); });
+  cardCd    = cards.map(function(c){ return c.querySelector('.card-h .cd'); });
+}
+
+/* ===================== “现在”实时高亮 ===================== */
+function renderNow(){
+  var d = new Date();
+  var m = d.getHours()*60 + d.getMinutes();
+
+  var secNow = d.getHours()*3600 + d.getMinutes()*60 + d.getSeconds();
+  var html = '<div class="nowclock"><span id="nowClock">' + fmt(m) + '</span><em>当前状态</em></div><div class="nowlist">';
+  TRACKS.forEach(function(t, i){
+    var st = stateAt(i, m);
+    var live = (st.cat !== 'off' && st.cat !== 'closed' && st.cat !== 'prep');
+    var cd = countdown(i, m, secNow);
+    html += '<div class="nowitem' + (live ? ' live' : '') + '" style="--tc:' + t.accent + '">' +
+            '<b>' + t.name + '</b><span>' + stateText(st) + '</span>' +
+            (cd ? '<em class="cd ' + cd.kind + '">' + cd.text + '</em>' : '') +
+            '</div>';
+  });
+  html += '</div>';
+  var wd = d.getDay();
+  if (wd === 0 || wd === 6){
+    html += '<div class="daynote">今天是' + (wd === 0 ? '周日' : '周六') + '，以下为常规教学日作息，请以学校实际安排为准。</div>';
+  }
+  document.getElementById('nowBar').innerHTML = html;
+
+  if (m >= START && m <= END){
+    nowLine.style.display = 'block';
+    nowLine.style.left = nowLeftPx(m) + 'px';
+    nowFlag.textContent = '现在 ' + fmt(m);
+    nowFlag.className = 'nowflag' + (nowPct(m) > 88 ? ' flip' : '');
+  } else {
+    nowLine.style.display = 'none';
+  }
+
+  updateVtNow(m);
+  TRACKS.forEach(function(t, i){
+    var st = stateAt(i, m);
+    var cd = countdown(i, m, secNow);
+    if (cardMeta[i]) cardMeta[i].textContent = stateText(st);
+    if (cardCd[i]){
+      cardCd[i].textContent = cd ? cd.text : '';
+      cardCd[i].style.display = cd ? '' : 'none';
+    }
+    laneBars[i].forEach(function(b, j){ b.classList.toggle('now', st.li === j); });
+    cardItems[i].forEach(function(li, j){
+      var key = (j === ROWS.length) ? 'close' : j;
+      var on = (st.li === key);
+      li.classList.toggle('live', on);
+      li.querySelector('.lbl').setAttribute('data-suffix',
+        on ? (st.cat === 'closed' ? ' · 已关寝' : (st.cat === 'noon' || st.cat === 'eve' ? ' · 当前' : ' · 进行中')) : '');
+    });
+  });
+}
+
+/* ===================== 悬停 / 触摸 预览轴 ===================== */
+/* 把“分钟”换算成 g-grid 坐标系里的像素位置：
+   必须用泳道绘图区(.g-area)的 offsetLeft / offsetWidth，
+   不能用整个 g-grid 的百分比，否则会偏掉左侧名称列和右侧关寝列的宽度。 */
+function nowLeftPx(m){
+  var a = laneAreas[0];
+  if (!a) return 0;
+  return a.offsetLeft + (pct(m) / 100) * a.offsetWidth;
+}
+function nowPct(m){
+  var w = gGrid ? gGrid.offsetWidth : 0;
+  return w ? (nowLeftPx(m) / w * 100) : 0;
+}
+function areaGeom(){
+  var a = laneAreas[0];
+  if (!a) return null;
+  var r = a.getBoundingClientRect();
+  return { rect:r, offsetLeft:a.offsetLeft, width:r.width };
+}
+/* 由鼠标 x 坐标求解时刻与位置 */
+function guideAtX(clientX){
+  var geo = areaGeom();
+  if (!geo || geo.width <= 0) return null;
+  var x = clientX - geo.rect.left;
+  if (x < 0 || x > geo.width) return null;
+  var mm = Math.round(START + (x / geo.width) * SPAN);
+  var leftPx = geo.offsetLeft + x;
+  return { mm:mm, leftPx:leftPx, p:leftPx / gGrid.offsetWidth * 100 };
+}
+/* 由时刻求解位置（钉住后窗口变化时重算用） */
+function guideAtMin(m){
+  var a = laneAreas[0];
+  if (!a || !gGrid) return null;
+  var leftPx = a.offsetLeft + (pct(m) / 100) * a.offsetWidth;
+  return { mm:m, leftPx:leftPx, p:leftPx / gGrid.offsetWidth * 100 };
+}
+function paintGuide(g, isPin){
+  guideEl.classList.add('on');
+  guideEl.classList.toggle('pinned', !!isPin);
+  guideEl.style.left = g.leftPx + 'px';
+  guideBubble.className = 'gbubble' + (g.p > 88 ? ' flip' : (g.p < 4 ? ' right' : ''));
+  guideBubble.innerHTML = isPin
+    ? '已钉住 ' + fmt(g.mm) + '<span class="gpin-close" id="gpinClose" title="取消钉住">✕</span>'
+    : fmt(g.mm);
+  laneRows.forEach(function(row, i){
+    var st = stateAt(i, g.mm);
+    var chip = guideChips[i];
+    chip.textContent = stateText(st);
+    chip.className = 'gchip cat-' + st.cat + (g.p > 72 ? ' flip' : '');
+    chip.style.top = (row.offsetTop + row.offsetHeight/2) + 'px';
+  });
+}
+/* 已钉住时跟随鼠标的浅色虚线：只提示位置，不再抢占状态胶囊 */
+function showGhost(clientX){
+  var g = guideAtX(clientX);
+  if (!g){ ghostEl.classList.remove('on'); return; }
+  ghostEl.classList.add('on');
+  ghostEl.style.left = g.leftPx + 'px';
+  ghostBubble.textContent = fmt(g.mm);
+  ghostBubble.className = (g.p > 88 ? 'flip' : '');
+}
+function showGuide(clientX){
+  if (pinned){ showGhost(clientX); return; }
+  var g = guideAtX(clientX);
+  if (!g){ hideGuide(); return; }
+  paintGuide(g, false);
+}
+function hideGuide(){
+  if (ghostEl) ghostEl.classList.remove('on');
+  if (!pinned && guideEl) guideEl.classList.remove('on');
+}
+function pinAt(clientX){
+  var g = guideAtX(clientX);
+  if (!g) return;
+  pinned = true; pinMin = g.mm;
+  paintGuide(g, true);
+  if (ghostEl) ghostEl.classList.remove('on');
+}
+function unpin(){
+  pinned = false; pinMin = null;
+  if (guideEl) guideEl.classList.remove('on', 'pinned');
+  if (ghostEl) ghostEl.classList.remove('on');
+}
+/* ===================== 竖排时间轴（手机版） ===================== */
+var VT_PPH = 48;                 /* 每小时 48px */
+var vtPlot, vtHeads, vtAxis, vtNow, vtGuide, vtBlocks = [], vtChips = [],
+    vtPinned = false, vtPinMin = null, vtLastTouch = 0;
+
+function vtRect(){
+  if (!vtPlot) return null;
+  var r = vtPlot.getBoundingClientRect();
+  return r.height > 0 ? r : null;
+}
+function vtPaintGuide(mm){
+  vtGuide.classList.add('on');
+  vtGuide.style.top = pct(mm) + '%';
+  vtGuide.querySelector('.vt-flag').innerHTML =
+    '已钉住 ' + fmt(mm) + '<span class="vx" id="vtClose" title="取消钉住">✕</span>';
+  var p = pct(mm), up = p > 80;      /* 太靠下就把气泡翻到线的上方 */
+  TRACKS.forEach(function(t, i){
+    var st = stateAt(i, mm);
+    vtBlocks[i].forEach(function(b, j){
+      b.classList.toggle('hot', st.li === j);
+      b.classList.remove('now');   /* 钉住期间先收起“现在”圈线，避免两种描边叠在一起 */
+    });
+    var chip = vtChips[i];
+    if (!chip) return;
+    var range = (st.s != null && st.e != null) ? (fmt(st.s) + '–' + fmt(st.e)) : '';
+    chip.innerHTML = '<b>' + (MID[st.label] || st.label) + '</b>' + (range ? '<i>' + range + '</i>' : '');
+    chip.style.top = p + '%';
+    chip.className = 'vt-chip on' + (up ? ' up' : '');
+  });
+}
+function vtUnpin(){
+  vtPinned = false; vtPinMin = null;
+  if (vtGuide) vtGuide.classList.remove('on');
+  vtBlocks.forEach(function(col){ col.forEach(function(b){ b.classList.remove('hot'); }); });
+  vtChips.forEach(function(c){ if (c) c.className = 'vt-chip'; });
+  var d = new Date();                       /* 立即恢复“当前正在上”的高亮 */
+  updateVtNow(d.getHours()*60 + d.getMinutes());
+}
+function vtPinAt(clientY){
+  var g = vtRect();
+  if (!g) return;
+  var y = clientY - g.top;
+  if (y < 0 || y > g.height) return;
+  vtPinned = true;
+  vtPinMin = Math.round(START + (y / g.height) * SPAN);
+  vtPaintGuide(vtPinMin);
+}
+function updateVtNow(m){
+  if (!vtNow) return;
+  if (m >= START && m <= END){
+    vtNow.classList.add('on');
+    vtNow.style.top = pct(m) + '%';
+    vtNow.querySelector('.vt-flag').textContent = '现在 ' + fmt(m);
+  } else {
+    vtNow.classList.remove('on');
+  }
+  /* 当前正在上的课在竖排里也高亮 */
+  if (vtBlocks.length){
+    TRACKS.forEach(function(t, i){
+      var li = stateAt(i, m).li;
+      vtBlocks[i].forEach(function(b, j){ b.classList.toggle('now', !vtPinned && li === j); });
+    });
+  }
+}
+function renderVertical(){
+  var wrap = document.getElementById('vtWrap');
+  if (!wrap) return;
+  vtPlot  = document.getElementById('vtPlot');
+  vtHeads = document.getElementById('vtHeads');
+  vtAxis  = document.getElementById('vtAxis');
+  wrap.style.setProperty('--vt-h', Math.round(SPAN / 60 * VT_PPH) + 'px');
+
+  vtHeads.innerHTML = TRACKS.map(function(t, i){
+    return '<div class="vt-head-cell" data-track="' + i + '" title="查看「' + t.name + '」的详细时间轴">' +
+           '<b>' + t.name + '</b></div>';
+  }).join('');
+
+  /* 07:30–08:00 半格 + 每小时一格；刻度用 sticky，滚动时始终显示“当前小时” */
+  var ticks = '<div class="vt-hr" style="height:' + (VT_PPH / 2) + 'px"></div>';
+  for (var hr = 8; hr <= 21; hr++){
+    ticks += '<div class="vt-hr" style="height:' + VT_PPH + 'px"><span>' + pad(hr) + ':00</span></div>';
+  }
+  ticks += '<span class="vt-endtick">22:00</span>';
+  vtAxis.innerHTML = ticks;
+
+  var lines = '';
+  for (var h2 = 8; h2 <= 22; h2++){
+    lines += '<i class="vt-hline major" style="top:' + pct(h2*60) + '%"></i>';
+    if (h2 < 22) lines += '<i class="vt-hline" style="top:' + pct(h2*60+30) + '%"></i>';
+  }
+
+  vtPlot.innerHTML = TRACKS.map(function(t, i){
+    var blocks = ROWS.map(function(r, j){
+      var se = t.times[j].split('-').map(toMin);
+      return '<div class="vt-blk ' + CAT[r] + '" style="top:' + pct(se[0]) + '%;height:' +
+             ((se[1] - se[0]) / SPAN * 100) + '%">' + SHORT[r] + '</div>';
+    }).join('');
+    var cp = pct(toMin(t.close));
+    return '<div class="vt-col" data-track="' + i + '">' + blocks +
+           '<i class="vt-close" style="top:' + cp + '%"></i>' +
+           '<span class="vt-close-tag" style="top:' + cp + '%">关寝 ' + t.close + '</span>' +
+           '<span class="vt-chip"></span></div>';
+  }).join('') + lines;
+
+  var body = document.getElementById('vtBody');
+  if (vtNow) vtNow.parentNode.removeChild(vtNow);
+  if (vtGuide) vtGuide.parentNode.removeChild(vtGuide);
+  body.insertAdjacentHTML('beforeend',
+    '<div class="vt-now" id="vtNow"><span class="vt-flag">现在</span></div>' +
+    '<div class="vt-guide" id="vtGuide"><span class="vt-flag">--:--</span></div>');
+  vtNow   = document.getElementById('vtNow');
+  vtGuide = document.getElementById('vtGuide');
+
+  var vcols = [].slice.call(vtPlot.querySelectorAll('.vt-col'));
+  vtBlocks = vcols.map(function(c){ return [].slice.call(c.querySelectorAll('.vt-blk')); });
+  vtChips  = vcols.map(function(c){ return c.querySelector('.vt-chip'); });
+}
+function bindVertical(){
+  var wrap = document.getElementById('vtWrap');
+  if (!wrap) return;
+  var tS = null;
+  wrap.addEventListener('click', function(e){
+    if (Date.now() - vtLastTouch < 700) return;
+    if (e.target && e.target.id === 'vtClose'){ vtUnpin(); return; }
+    vtPinAt(e.clientY);
+  });
+  /* 手指一按下就钉住并显示时间，反馈即时；
+     若随后位移超过 12px 判定为滑动，撤销钉住（不干扰翻页） */
+  wrap.addEventListener('touchstart', function(e){
+    if (!e.touches || !e.touches[0]) return;
+    vtLastTouch = Date.now();
+    var t = e.touches[0];
+    var onClose = !!(e.target && e.target.id === 'vtClose');
+    tS = { x:t.clientX, y:t.clientY, moved:false, onClose:onClose };
+    if (onClose) return;
+    vtPinAt(t.clientY);
+  }, { passive:true });
+  wrap.addEventListener('touchmove', function(e){
+    if (!tS || !e.touches || !e.touches[0]) return;
+    if (Math.abs(e.touches[0].clientX - tS.x) > 12 ||
+        Math.abs(e.touches[0].clientY - tS.y) > 12){
+      tS.moved = true;
+      vtUnpin();
+    }
+  }, { passive:true });
+  wrap.addEventListener('touchend', function(){
+    vtLastTouch = Date.now();
+    if (!tS) return;
+    var st = tS; tS = null;
+    if (st.onClose) vtUnpin();          /* 点 ✕ 取消钉住 */
+  }, { passive:true });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && vtPinned) vtUnpin();
+  });
+  [].slice.call(vtHeads.querySelectorAll('.vt-head-cell')).forEach(function(h, i){
+    h.addEventListener('click', function(e){ e.stopPropagation(); jumpToTrack(i); });
+  });
+}
+
+/* 点击总览里的学院名，跳到下方对应卡片并闪一下 */
+function jumpToTrack(i){
+  var card = document.querySelectorAll('#cards .card')[i];
+  if (!card) return;
+  var y = Math.max(0, card.getBoundingClientRect().top + window.pageYOffset - 10);
+  var y0 = window.pageYOffset;
+  try { window.scrollTo({ top:y, behavior:'smooth' }); }
+  catch(e){ window.scrollTo(0, y); }
+  /* 兜底：某些环境（无渲染帧）平滑滚动不会推进，600ms 后仍未动就直接跳 */
+  setTimeout(function(){
+    if (Math.abs(window.pageYOffset - y0) < 4 && Math.abs(window.pageYOffset - y) > 4){
+      window.scrollTo(0, y);
+    }
+  }, 600);
+  card.classList.remove('flash');
+  void card.offsetWidth;
+  card.classList.add('flash');
+  clearTimeout(card.__flashT);
+  card.__flashT = setTimeout(function(){ card.classList.remove('flash'); }, 2600);
+}
+function bindNameJump(){
+  [].slice.call(gGrid.querySelectorAll('.g-lane .g-name')).forEach(function(n, i){
+    n.setAttribute('title', '查看「' + TRACKS[i].name + '」的详细时间轴');
+    n.addEventListener('click', function(e){
+      e.stopPropagation();
+      jumpToTrack(i);
+    });
+  });
+}
+function bindGuide(){
+  gGrid.addEventListener('mousemove', function(e){ showGuide(e.clientX); });
+  gGrid.addEventListener('mouseleave', hideGuide);
+  gGrid.addEventListener('click', function(e){
+    if (Date.now() - lastTouch < 700) return;          /* 忽略触摸后浏览器补发的 click */
+    if (e.target && e.target.id === 'gpinClose'){ unpin(); return; }
+    pinAt(e.clientX);
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && pinned) unpin();
+  });
+
+  var tStart = null;
+  gGrid.addEventListener('touchstart', function(e){
+    if (!e.touches || !e.touches[0]) return;
+    lastTouch = Date.now();
+    tStart = { x:e.touches[0].clientX, y:e.touches[0].clientY, t:Date.now(), moved:false,
+               onClose: !!(e.target && e.target.id === 'gpinClose') };
+    if (!pinned && !tStart.onClose) showGuide(e.touches[0].clientX);
+  }, { passive:true });
+  gGrid.addEventListener('touchmove', function(e){
+    if (!e.touches || !e.touches[0] || !tStart) return;
+    if (Math.abs(e.touches[0].clientX - tStart.x) > 8 ||
+        Math.abs(e.touches[0].clientY - tStart.y) > 8) tStart.moved = true;
+    if (!tStart.moved && !pinned) showGuide(e.touches[0].clientX);
+  }, { passive:true });
+  gGrid.addEventListener('touchend', function(){
+    lastTouch = Date.now();
+    if (!tStart) return;
+    var st = tStart; tStart = null;
+    if (st.onClose){ unpin(); return; }                          /* 点 ✕ 取消钉住 */
+    if (!st.moved && (Date.now() - st.t) < 500){ pinAt(st.x); }   /* 轻点 = 钉住 */
+    else if (!pinned){ setTimeout(hideGuide, 1500); }
+  }, { passive:true });
+
+  window.addEventListener('resize', function(){ hideGuide(); relayout(); });
+}
+
+/* ===================== 屏蔽右键 / 开发者工具快捷键 / 另存为 ===================== */
+function bindProtect(){
+  /* 右键菜单 */
+  document.addEventListener('contextmenu', function(e){
+    e.preventDefault();
+    return false;
+  });
+
+  /* 快捷键：F12、Ctrl/Cmd+Shift+I/J/C/K、Ctrl/Cmd+U（看源码）、Ctrl/Cmd+S（另存为） */
+  document.addEventListener('keydown', function(e){
+    var k = (e.key || '').toLowerCase();
+    var mod = e.ctrlKey || e.metaKey;
+    var hit =
+      e.key === 'F12' ||
+      e.keyCode === 123 ||
+      (mod && e.shiftKey && (k === 'i' || k === 'j' || k === 'c' || k === 'k')) ||
+      (mod && !e.shiftKey && (k === 'u' || k === 's')) ||
+      (e.metaKey && e.altKey && (k === 'i' || k === 'j' || k === 'c' || k === 'u'));
+    if (hit){ e.preventDefault(); e.stopPropagation(); return false; }
+  }, true);
+}
+
+/* ===================== 禁止复制文字 ===================== */
+function bindNoCopy(){
+  ['copy','cut','selectstart','dragstart'].forEach(function(t){
+    document.addEventListener(t, function(e){
+      var el = e.target;
+      /* 输入框不拦（本页暂无，留作以后扩展） */
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+      e.preventDefault();
+    }, { passive:false });
+  });
+}
+
+/* ===================== 回到顶部 ===================== */
+function bindToTop(){
+  var btn = document.getElementById('toTop');
+  if (!btn) return;
+  function upd(){
+    var y = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+    btn.classList.toggle('on', y > 300);
+  }
+  btn.addEventListener('click', function(){
+    var y0 = window.pageYOffset;
+    try { window.scrollTo({ top:0, behavior:'smooth' }); }
+    catch(e){ window.scrollTo(0, 0); }
+    /* 兜底：平滑滚动没推进时直接跳回顶部 */
+    setTimeout(function(){
+      if (window.pageYOffset > 4 && Math.abs(window.pageYOffset - y0) < 4) window.scrollTo(0, 0);
+    }, 600);
+  });
+  /* scroll 事件在部分环境（含无头渲染）不稳定，用哨兵元素 + IntersectionObserver 兜底 */
+  var sent = document.createElement('i');
+  sent.setAttribute('style', 'position:absolute;top:300px;left:0;width:1px;height:1px;pointer-events:none;opacity:0');
+  document.body.appendChild(sent);
+  if (window.IntersectionObserver){
+    new IntersectionObserver(function(es){
+      btn.classList.toggle('on', !es[0].isIntersecting);
+    }, { threshold:0 }).observe(sent);
+  }
+  window.addEventListener('scroll', upd, { passive:true });
+  document.addEventListener('scroll', upd, { passive:true });
+  window.addEventListener('resize', upd, { passive:true });
+  document.addEventListener('visibilitychange', upd);
+  upd();
+  window.SQTC_updToTop = upd;   /* 供自检/外部调用 */
+}
+
+/* ===================== 布局 ===================== */
+function relayout(){
+  if (ghostEl) ghostEl.classList.remove('on');
+  if (typeof updateVtNow === 'function'){
+    var dm = (new Date()).getHours()*60 + (new Date()).getMinutes();
+    updateVtNow(dm);
+  }
+  if (pinned && pinMin != null){
+    var gp = guideAtMin(pinMin);
+    if (gp) paintGuide(gp, true); else unpin();
+  } else if (guideEl){
+    guideEl.classList.remove('on');
+  }
+  if (!nowLine) return;
+  var d = new Date(), m = d.getHours()*60 + d.getMinutes();
+  if (m >= START && m <= END){
+    nowLine.style.display = 'block';
+    nowLine.style.left = nowLeftPx(m) + 'px';
+    nowFlag.className = 'nowflag' + (nowPct(m) > 88 ? ' flip' : '');
+  }
+}
+
+/* ===================== 启动 ===================== */
+renderGantt();
+renderCards();
+initDevice();
+bindNameJump();
+bindGuide();
+renderVertical();
+bindVertical();
+bindToTop();
+bindNoCopy();
+bindProtect();
+renderNow();
+setInterval(renderNow, 20000);
+document.addEventListener('visibilitychange', function(){ if (!document.hidden) renderNow(); });
+
+/* 调试/外部调用入口 */
+window.SQTC = { showGuide:showGuide, hideGuide:hideGuide, pinAt:pinAt, unpin:unpin, applyDevice:applyDevice, renderNow:renderNow, relayout:relayout, vtPinAt:vtPinAt, vtUnpin:vtUnpin };
+</script>
+</body>
+</html>
