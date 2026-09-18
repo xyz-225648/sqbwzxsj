@@ -74,6 +74,8 @@
   .nowitem b{display:block;font-size:12px;color:var(--tc);font-weight:700}
   .nowitem span{display:block;font-size:12px;color:var(--ink2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .nowitem.live span{color:#9f1239;font-weight:700}
+    .nowitem{cursor:pointer;transition:background .12s,border-color .12s}
+    .nowitem:active{background:#dbeafe;border-color:#93c5fd}
   .nowitem .cd{display:block;font-style:normal;font-size:11px;font-weight:700;margin-top:4px;
                letter-spacing:.2px;font-variant-numeric:tabular-nums}
   .nowitem .cd.end{color:#be123c}      /* 正在上课：还有多久下课 */
@@ -198,18 +200,18 @@
 
   /* ---------- 竖排时间轴（手机版专用） ---------- */
   .vt{display:none;background:var(--card);border:1px solid var(--line);border-radius:14px;
-      padding:12px 10px;box-shadow:0 3px 14px rgba(15,23,42,.06);--vt-h:700px}
-  .vt-head{display:flex;align-items:flex-end;position:sticky;top:0;z-index:10;
+      padding:12px 10px;box-shadow:0 3px 14px rgba(15,23,42,.06);--vt-h:700px;--vt-headh:54px}
+  .vt-head{display:flex;align-items:stretch;min-height:var(--vt-headh);position:sticky;top:0;z-index:10;
            background:var(--card);padding-top:6px;border-bottom:1px solid var(--line)}
   .vt-pad{width:42px;flex:0 0 42px}
   .vt-heads{flex:1;display:flex;min-width:0}
-  .vt-head-cell{flex:1;text-align:center;padding:0 2px 8px;min-width:0;cursor:pointer}
-  .vt-head-cell b{display:block;font-size:12px;font-weight:700;color:var(--ink);white-space:nowrap}
-  .vt-head-cell:active b{color:#1d4ed8}
+  .vt-head-cell{flex:1;display:flex;align-items:center;justify-content:center;min-height:calc(var(--vt-headh) - 6px);padding:0 2px 6px;min-width:0;cursor:pointer}
+  .vt-head-cell b{display:block;font-size:13px;font-weight:700;color:var(--ink);white-space:nowrap;padding:6px 8px;border-radius:8px;background:#eef2f7;transition:background .12s,color .12s}
+  .vt-head-cell:active b{color:#1d4ed8;background:#dbeafe}
   .vt-body{display:flex;position:relative;height:var(--vt-h)}
   .vt-axis{width:42px;flex:0 0 42px;position:relative}
   .vt-hr{position:relative}
-  .vt-hr span{position:sticky;top:33px;display:block;text-align:right;padding-right:6px;
+  .vt-hr span{position:sticky;top:var(--vt-headh);display:block;text-align:right;padding-right:6px;
               font-size:10px;line-height:1.2;color:#94a3b8;font-variant-numeric:tabular-nums;white-space:nowrap}
   .vt-endtick{position:absolute;right:6px;bottom:-6px;font-size:10px;color:#94a3b8;
               font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -614,7 +616,7 @@ function renderNow(){
     var st = stateAt(i, m);
     var live = (st.cat !== 'off' && st.cat !== 'closed' && st.cat !== 'prep');
     var cd = countdown(i, m, secNow);
-    html += '<div class="nowitem' + (live ? ' live' : '') + '" style="--tc:' + t.accent + '">' +
+    html += '<div class="nowitem' + (live ? ' live' : '') + '" data-track="' + i + '" style="--tc:' + t.accent + '">' +
             '<b>' + t.name + '</b><span>' + stateText(st) + '</span>' +
             (cd ? '<em class="cd ' + cd.kind + '">' + cd.text + '</em>' : '') +
             '</div>';
@@ -907,6 +909,19 @@ function bindVertical(){
 }
 
 /* 点击总览里的学院名，跳到下方对应卡片并闪一下 */
+/* 点「当前状态」里的学院 → 跳到下方该学院的详细卡片并闪一下 */
+function bindNowBar(){
+  var bar = document.getElementById('nowBar');
+  if (!bar) return;
+  bar.addEventListener('click', function(e){
+    var el = e.target;
+    while (el && el !== bar && String(el.className || '').indexOf('nowitem') < 0){ el = el.parentNode; }
+    if (!el || el === bar) return;
+    var i = parseInt(el.getAttribute('data-track'), 10);
+    if (!isNaN(i)) jumpToTrack(i);
+  });
+}
+
 function jumpToTrack(i){
   var card = document.querySelectorAll('#cards .card')[i];
   if (!card) return;
@@ -1119,6 +1134,7 @@ bindVertical();
 bindToTop();
 bindNoCopy();
 initZoom();
+bindNowBar();
 bindProtect();
 renderNow();
 setInterval(renderNow, 20000);
