@@ -1032,6 +1032,35 @@ function bindToTop(){
   window.SQTC_updToTop = upd;   /* 供自检/外部调用 */
 }
 
+/* ===================== Ctrl + 滚轮缩放 ===================== */
+/* 打包成 exe 后，pywebview 会把 WebView2 的“浏览器加速键”关掉（它绑在 debug 开关上），
+   连 Ctrl+滚轮缩放一起失效。这里由页面自己接管，任何环境都能缩放，且设置会被记住。 */
+var ZOOM_KEY = 'sqzy-zoom';
+function initZoom(){
+  var z = parseFloat(safeGet(ZOOM_KEY));
+  if (!(z > 0)) z = 1;
+  function apply(v){
+    z = Math.min(2.5, Math.max(0.6, Math.round(v * 100) / 100));
+    document.documentElement.style.zoom = z;
+    safeSet(ZOOM_KEY, String(z));
+  }
+  if (Math.abs(z - 1) > 0.001) apply(z);
+  document.addEventListener('wheel', function(e){
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    apply(z + (e.deltaY < 0 ? 0.1 : -0.1));
+  }, { passive:false });
+  document.addEventListener('keydown', function(e){
+    if (!(e.ctrlKey || e.metaKey)) return;
+    var k = e.key;
+    if (k === '0' || e.keyCode === 48){ e.preventDefault(); apply(1); }
+    else if (k === '+' || k === '=' || k === 'Add'){ e.preventDefault(); apply(z + 0.1); }
+    else if (k === '-' || k === '_' || k === 'Subtract'){ e.preventDefault(); apply(z - 0.1); }
+  }, true);
+  window.SQZY_SETZOOM = apply;
+  return apply;
+}
+
 /* ===================== 布局 ===================== */
 function relayout(){
   if (ghostEl) ghostEl.classList.remove('on');
@@ -1064,6 +1093,7 @@ renderVertical();
 bindVertical();
 bindToTop();
 bindNoCopy();
+initZoom();
 bindProtect();
 renderNow();
 setInterval(renderNow, 20000);
