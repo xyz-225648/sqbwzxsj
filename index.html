@@ -668,11 +668,20 @@ function nowPct(m){
   var w = gGrid ? gGrid.offsetWidth : 0;
   return w ? (nowLeftPx(m) / w * 100) : 0;
 }
+/* 页面被缩放过（Ctrl+滚轮）时，getBoundingClientRect() 返回的是缩放后的视觉像素，
+   而 offsetLeft / offsetWidth 仍是布局像素，两者直接相加会错位。
+   这里用「缩放后宽度 ÷ 布局宽度」求出缩放比，把鼠标坐标换算回布局像素再参与计算。 */
+function zoomScale(){
+  var g = gGrid;
+  if (!g) return 1;
+  var w = g.offsetWidth, rw = g.getBoundingClientRect().width;
+  return (w > 0 && rw > 0) ? rw / w : 1;
+}
 function areaGeom(){
   var a = laneAreas[0];
   if (!a) return null;
   var r = a.getBoundingClientRect();
-  return { rect:r, offsetLeft:a.offsetLeft, width:r.width };
+  return { rect:r, offsetLeft:a.offsetLeft, width:r.width, scale:zoomScale() };
 }
 /* 由鼠标 x 坐标求解时刻与位置 */
 function guideAtX(clientX){
@@ -680,8 +689,8 @@ function guideAtX(clientX){
   if (!geo || geo.width <= 0) return null;
   var x = clientX - geo.rect.left;
   if (x < 0 || x > geo.width) return null;
-  var mm = Math.round(START + (x / geo.width) * SPAN);
-  var leftPx = geo.offsetLeft + x;
+  var mm = Math.round(START + (x / geo.width) * SPAN);   /* 比例与缩放无关，时刻本来就是对的 */
+  var leftPx = geo.offsetLeft + x / geo.scale;          /* 换算回布局像素，竖线才不会跑偏 */
   return { mm:mm, leftPx:leftPx, p:leftPx / gGrid.offsetWidth * 100 };
 }
 /* 由时刻求解位置（钉住后窗口变化时重算用） */
@@ -901,14 +910,16 @@ function bindVertical(){
 function jumpToTrack(i){
   var card = document.querySelectorAll('#cards .card')[i];
   if (!card) return;
-  var y = Math.max(0, card.getBoundingClientRect().top + window.pageYOffset - 10);
+  /* 用 scrollIntoView：缩放（Ctrl+滚轮）后视觉像素与布局像素不是一回事，
+     自己算 scrollTop 会算错，交给浏览器最稳。 */
   var y0 = window.pageYOffset;
-  try { window.scrollTo({ top:y, behavior:'smooth' }); }
-  catch(e){ window.scrollTo(0, y); }
+  try { card.scrollIntoView({behavior:'smooth', block:'start'}); }
+  catch(e){ card.scrollIntoView(true); }
   /* 兜底：某些环境（无渲染帧）平滑滚动不会推进，600ms 后仍未动就直接跳 */
   setTimeout(function(){
-    if (Math.abs(window.pageYOffset - y0) < 4 && Math.abs(window.pageYOffset - y) > 4){
-      window.scrollTo(0, y);
+    if (Math.abs(window.pageYOffset - y0) < 4){
+      try { card.scrollIntoView({block:'start'}); }
+      catch(e){ card.scrollIntoView(true); }
     }
   }, 600);
   card.classList.remove('flash');
