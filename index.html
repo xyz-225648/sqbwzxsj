@@ -1050,10 +1050,24 @@ var ZOOM_KEY = 'sqzy-zoom';
 function initZoom(){
   var z = parseFloat(safeGet(ZOOM_KEY));
   if (!(z > 0)) z = 1;
+  /* 缩放会改变视口 CSS 宽度、让整页重新布局，
+     时间轴上按像素定位的元素（「现在」红线等）必须立刻重算，
+     否则要等 20 秒的定时器才刷新。 */
+  var reflowTimer = null;
+  function reflowNow(){
+    try { if (typeof renderNow === 'function') renderNow(); } catch(e){}
+    if (reflowTimer) clearTimeout(reflowTimer);
+    reflowTimer = setTimeout(function(){
+      reflowTimer = null;
+      try { if (typeof relayout === 'function') relayout(); } catch(e){}
+      try { if (typeof renderNow === 'function') renderNow(); } catch(e){}
+    }, 90);
+  }
   function apply(v){
     z = Math.min(2.5, Math.max(0.6, Math.round(v * 100) / 100));
     document.documentElement.style.zoom = z;
     safeSet(ZOOM_KEY, String(z));
+    reflowNow();
   }
   if (Math.abs(z - 1) > 0.001) apply(z);
   document.addEventListener('wheel', function(e){
