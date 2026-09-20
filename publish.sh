@@ -14,17 +14,45 @@ if [ ! -f "$HTML" ]; then
   exit 1
 fi
 
+# ---- 发布前强制自检：页面脚本有语法错误就直接拒绝发布 ----
+echo "检查页面语法 ..."
+if ! python check_page.py "$HTML"; then
+  echo
+  echo "自检未通过，已中止发布（线上内容不受影响）。"
+  exit 1
+fi
+echo
+
+# ---- 渲染冒烟测试：无头浏览器真跑一遍，抓未捕获异常 + 功能真的渲染出来了没有 ----
+echo "渲染冒烟测试（无头浏览器，约 5-10 秒）..."
+if ! python smoke_page.py "$HTML"; then
+  echo
+  echo "冒烟测试未通过，已中止发布（线上内容不受影响）。"
+  exit 1
+fi
+echo
+
 rm -rf "$OUT"
 mkdir -p "$OUT"
 cp "$HTML" "$OUT/index.html"
 
 HASH=$(python -c "import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest()[:16])" "$OUT/index.html")
 STAMP=$(date '+%Y-%m-%d %H:%M')
-printf '%s  %s\n' "$HASH" "$STAMP" > "$OUT/version.txt"
+# 版本号直接取自页面里的 APP_VERSION，绝不会两边对不上
+VER=$(python - "$HTML" <<'PYEOF'
+import io, re, sys
+s = io.open(sys.argv[1], encoding='utf-8').read()
+m = re.search(r"var APP_VERSION = '([^']+)'", s)
+print(m.group(1) if m else 'v0')
+PYEOF
+)
+# 写成可被 <script> 加载的 JS：网页侧没有跨域限制，手机版也能检测更新
+python -c "import io,json,sys; io.open('$OUT/version.txt','w',encoding='utf-8',newline=chr(10)).write('window.SQZY_LATEST='+json.dumps({'v':sys.argv[1],'h':sys.argv[2],'t':sys.argv[3]},ensure_ascii=False)+';'+chr(10))" "$VER" "$HASH" "$STAMP"
 
 echo "================================================"
 echo " 发布包已生成： $OUT/"
 echo "   index.html   $(du -k "$OUT/index.html" | cut -f1) KB"
+echo "   版本:$VER"
 echo "   version.txt  $(cat "$OUT/version.txt")"
 echo "================================================"
 echo
