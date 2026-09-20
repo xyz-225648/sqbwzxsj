@@ -1098,7 +1098,7 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2026.9.26';
+var APP_VERSION = 'v2026.9.27';
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 var latestInfo = null;
@@ -1337,13 +1337,17 @@ function fireNotify(i, m, kind, title, body){
   sendNotify(title, body);
   inPageToast(title, body);
 }
+var notifyFirstRun = true;
 function checkNotify(){
   if (!notifyCfg.on) return;
   var d = new Date(), m = d.getHours() * 60 + d.getMinutes();
   /* 窗口藏进托盘（或窗口在后台）时，浏览器会把定时器降频，最短 1 分钟才跑一次；
      只认「正好这一分钟」会整条漏掉，所以把最近 2 分钟都补算一遍。
-     去重键里带着那一个分钟数，补算不会重复发。 */
-  for (var k = 0; k <= 2; k++){
+     但「程序刚打开」的那一次不补：那几分钟本来就没在运行，补发只会冒出一条
+     已经过时的提醒（用户会以为设置没生效）。去重键带分钟数，补算不会重复发。 */
+  var span = notifyFirstRun ? 0 : 2;
+  notifyFirstRun = false;
+  for (var k = 0; k <= span; k++){
     (function(mm){
       TRACKS.forEach(function(t, i){
         if (!notifyCfg.tracks[i]) return;
