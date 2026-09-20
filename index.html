@@ -1095,7 +1095,7 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2026.9.22';
+var APP_VERSION = 'v2026.9.23';
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 var latestInfo = null;
@@ -1360,6 +1360,7 @@ function initSettings(){
   sheet.innerHTML =
     '<div class="sheet-card">' +
       '<div class="sheet-head"><b>设置</b><span class="sheet-x" id="setClose">✕</span></div>' +
+      '<div class="setnote" style="margin:0 0 4px">改动立即生效并自动保存，不用点确认；关掉窗口下次打开还在。</div>' +
       '<div class="setsec">桌面通知</div>' +
       '<div class="setrow"><label><input type="checkbox" id="setOn">开启通知（Windows 系统通知）</label></div>' +
       '<div class="setsec">提醒哪些学院</div>' +
