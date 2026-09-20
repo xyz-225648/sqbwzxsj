@@ -59,6 +59,46 @@
   .devbtn:hover{background:rgba(255,255,255,.24)}
 
 
+  /* ---------- 设置面板 ---------- */
+  .devbox{display:flex;gap:8px;align-items:flex-start}
+  .setbtn{font:inherit;font-size:12px;font-weight:600;color:#e0e7ff;background:rgba(255,255,255,.12);
+          border:1px solid rgba(255,255,255,.28);border-radius:9px;padding:7px 12px;cursor:pointer;white-space:nowrap}
+  .setbtn:hover{background:rgba(255,255,255,.2)}
+  .pinbtn{display:flex;align-items:center;gap:5px;font:inherit;font-size:12px;font-weight:600;
+          color:#94a3b8;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.22);
+          border-radius:9px;padding:6px 10px;cursor:pointer;white-space:nowrap;transition:all .15s}
+  .pinbtn svg{width:15px;height:15px;display:block}
+  .pinbtn:hover{background:rgba(255,255,255,.2)}
+  .pinbtn.on{color:#0f172a;background:#fbbf24;border-color:#f59e0b}
+  .pinbtn.on svg{transform:rotate(-32deg)}
+  .sheet{position:fixed;inset:0;z-index:9998;display:none;background:rgba(15,23,42,.55)}
+  .sheet.on{display:block}
+  .sheet-card{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+              width:min(430px,calc(100vw - 28px));max-height:calc(100vh - 40px);overflow:auto;
+              background:#fff;border-radius:15px;box-shadow:0 20px 60px rgba(15,23,42,.35);padding:16px 18px 18px}
+  .sheet-head{display:flex;align-items:center;justify-content:space-between}
+  .sheet-head b{font-size:16px;color:#0f172a}
+  .sheet-x{cursor:pointer;color:#94a3b8;font-size:15px;padding:2px 7px;border-radius:7px}
+  .sheet-x:hover{background:#f1f5f9;color:#0f172a}
+  .setsec{font-size:12px;font-weight:700;color:#64748b;margin:14px 0 7px;padding-top:11px;border-top:1px solid #eef2f7}
+  .setrow{display:flex;align-items:center;gap:9px;font-size:13px;color:#0f172a;padding:6px 0}
+  .setrow label{display:flex;align-items:center;gap:8px;cursor:pointer;flex:1}
+  .setrow input[type=checkbox]{width:16px;height:16px;accent-color:#2563eb;cursor:pointer}
+  .setrow input[type=number]{width:58px;font:inherit;font-size:13px;padding:4px 7px;border:1px solid #cbd5e1;border-radius:7px}
+  .setgrid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .setgrid label{display:flex;align-items:center;gap:8px;font-size:13px;padding:7px 9px;
+                 border:1px solid #e2e8f0;border-radius:9px;cursor:pointer}
+  .setgrid label.on{border-color:#bfdbfe;background:#eff6ff}
+  .settest{font:inherit;font-size:13px;font-weight:600;color:#fff;background:#2563eb;border:0;
+           border-radius:9px;padding:9px 14px;cursor:pointer;width:100%;margin-top:8px}
+  .settest:hover{background:#1d4ed8}
+  .setnote{font-size:12px;color:#94a3b8;line-height:1.7;margin-top:9px}
+  .sysToast{position:fixed;right:16px;bottom:16px;z-index:9999;max-width:330px;background:#0f172a;color:#fff;
+            border-radius:12px;padding:12px 15px;box-shadow:0 14px 40px rgba(15,23,42,.4)}
+  .sysToast b{display:block;font-size:13px;margin-bottom:3px}
+  .sysToast span{font-size:12px;color:#cbd5e1;line-height:1.6}
+  .sysToast.out{opacity:0;transform:translateY(8px);transition:opacity .4s,transform .4s}
+
   /* ---------- 当前状态条 ---------- */
   .nowbar{
     background:var(--card);border:1px solid var(--line);border-radius:14px;
@@ -1058,6 +1098,243 @@ function bindToTop(){
   window.SQTC_updToTop = upd;   /* 供自检/外部调用 */
 }
 
+/* ===================== 设置面板 & 通知 ===================== */
+var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
+var notifyCfg = { on:true, onTop:true, before:true, next:true, start:false, end:false, min:5,
+                  tracks:[true,true,true,true] };
+var firedKeys = {};
+var pywvReady = false;
+
+function loadCfg(){
+  try{ var raw = safeGet(NOTIFY_KEY); if (raw) { var o = JSON.parse(raw);
+    for (var k in notifyCfg) if (o[k] !== undefined) notifyCfg[k] = o[k];
+    if (!(notifyCfg.tracks instanceof Array) || notifyCfg.tracks.length !== 4) notifyCfg.tracks = [true,true,true,true];
+  } }catch(e){}
+  try{ var f = safeGet(FIRED_KEY); if (f) firedKeys = JSON.parse(f) || {}; }catch(e){}
+}
+function saveCfg(){ try{ safeSet(NOTIFY_KEY, JSON.stringify(notifyCfg)); }catch(e){} }
+
+function pywvApi(){
+  return (window.pywebview && window.pywebview.api) ? window.pywebview.api : null;
+}
+function apiBase(){
+  return (typeof window.SQZY_API === 'string' && window.SQZY_API) ? window.SQZY_API : null;
+}
+
+function sendNotify(title, body){
+  var api = pywvApi();
+  if (api && api.notify){ try{ api.notify(title, body); return 'native'; }catch(e){} }
+  var base = apiBase();
+  if (base){
+    try{
+      fetch(base + '/notify?title=' + encodeURIComponent(title) + '&body=' + encodeURIComponent(body))
+        .catch(function(){});
+      return 'native';
+    }catch(e){}
+  }
+  if (window.Notification && Notification.permission === 'granted'){
+    try{ new Notification(title, { body: body }); return 'web'; }catch(e){}
+  }
+  return null;
+}
+function inPageToast(title, body){
+  var el = document.createElement('div');
+  el.className = 'sysToast';
+  var b = document.createElement('b'); b.textContent = title;
+  var sp = document.createElement('span'); sp.textContent = body;
+  el.appendChild(b); el.appendChild(sp);
+  document.body.appendChild(el);
+  setTimeout(function(){ el.classList.add('out'); }, 4200);
+  setTimeout(function(){ if (el.parentNode) el.parentNode.removeChild(el); }, 5000);
+}
+function applyOnTop(){
+  var api = pywvApi();
+  if (api && api.set_on_top){ try{ api.set_on_top(!!notifyCfg.onTop); }catch(e){} }
+  var base = apiBase();
+  if (base){
+    try{ fetch(base + '/ontop?on=' + (notifyCfg.onTop ? 1 : 0)).catch(function(){}); }catch(e){}
+  }
+}
+function refreshPin(){
+  var pin = document.getElementById('pinBtn');
+  if (!pin) return;
+  pin.classList.toggle('on', !!notifyCfg.onTop);
+  pin.title = notifyCfg.onTop ? '已保持窗口最前（点击取消）' : '保持窗口最前（点击开启）';
+  var sp = pin.querySelector('span');
+  if (sp) sp.textContent = notifyCfg.onTop ? '保持最前' : '置顶';
+}
+function refreshSetUI(){
+  refreshPin();
+  var ids = ['setOnTop','setOn','setBefore','setNext','setStart','setEnd'];
+  var vals = [notifyCfg.onTop, notifyCfg.on, notifyCfg.before, notifyCfg.next, notifyCfg.start, notifyCfg.end];
+  ids.forEach(function(id, i){ var e = document.getElementById(id); if (e) e.checked = !!vals[i]; });
+  var mn = document.getElementById('setMin'); if (mn) mn.value = notifyCfg.min;
+  var host = document.getElementById('setTracks');
+  if (host) [].slice.call(host.children).forEach(function(lab, i){
+    lab.className = notifyCfg.tracks[i] ? 'on' : '';
+    var cb = lab.querySelector('input'); if (cb) cb.checked = !!notifyCfg.tracks[i];
+  });
+}
+function segAtMin(i, m){
+  var segs = SEGS[i];
+  for (var k = 0; k < segs.length; k++) if (m >= segs[k].s && m < segs[k].e) return segs[k];
+  return null;
+}
+function isClassSeg(g){ return !!g && ['gap','noon','eve'].indexOf(g.cat) < 0; }
+function fireNotify(i, m, kind, title, body){
+  var key = i + '|' + m + '|' + kind;
+  if (firedKeys[key]) return;
+  firedKeys[key] = 1;
+  try{ safeSet(FIRED_KEY, JSON.stringify(firedKeys)); }catch(e){}
+  sendNotify(title, body);
+  inPageToast(title, body);
+}
+function checkNotify(){
+  if (!notifyCfg.on) return;
+  var d = new Date(), m = d.getHours() * 60 + d.getMinutes();
+  TRACKS.forEach(function(t, i){
+    if (!notifyCfg.tracks[i]) return;
+    var cur = segAtMin(i, m), prev = segAtMin(i, m - 1);
+    if (notifyCfg.end && isClassSeg(prev) && prev.e === m)
+      fireNotify(i, m, 'end', t.name + ' · 下课了', prev.label + ' ' + fmt(prev.s) + '–' + fmt(prev.e));
+    if (notifyCfg.start && isClassSeg(cur) && cur.s === m)
+      fireNotify(i, m, 'start', t.name + ' · 开始上课', cur.label + ' ' + fmt(cur.s) + '–' + fmt(cur.e));
+    if (notifyCfg.before && isClassSeg(cur) && cur.e - m === notifyCfg.min)
+      fireNotify(i, m, 'before', t.name + ' · 还有 ' + notifyCfg.min + ' 分钟下课',
+                 cur.label + ' ' + fmt(cur.s) + '–' + fmt(cur.e));
+    if (notifyCfg.next && cur && !isClassSeg(cur) && cur.e - m === notifyCfg.min)
+      fireNotify(i, m, 'next', t.name + ' · 还有 ' + notifyCfg.min + ' 分钟上课',
+                 '下一节 ' + fmt(cur.e) + ' 开始');
+  });
+}
+function initSettings(){
+  var devbox = document.querySelector('.devbox');
+  if (devbox){
+    var setb = document.createElement('button');
+    setb.type = 'button'; setb.className = 'setbtn'; setb.id = 'setBtn'; setb.textContent = '设置';
+    devbox.insertBefore(setb, devbox.firstChild);
+
+    /* 钉子按钮：一眼看出开没开（亮黄=保持最前，灰=不保持） */
+    var pin = document.createElement('button');
+    pin.type = 'button'; pin.className = 'pinbtn'; pin.id = 'pinBtn';
+    pin.title = '保持窗口最前';
+    pin.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
+      + '<path d="M14 4v6l3 3v2h-4.2l-.8 5-.8-5H7v-2l3-3V4h-1V2h6v2h-1z"/></svg><span></span>';
+    devbox.insertBefore(pin, devbox.firstChild);
+    pin.addEventListener('click', function(){
+      notifyCfg.onTop = !notifyCfg.onTop;
+      saveCfg();
+      refreshPin();
+      applyOnTop();
+      refreshSetUI();
+    });
+  }
+  var sheet = document.createElement('div');
+  sheet.className = 'sheet'; sheet.id = 'setSheet';
+  var trackBoxes = TRACKS.map(function(t, i){
+    return '<label data-i="' + i + '"><input type="checkbox">' + t.name + '</label>';
+  }).join('');
+  sheet.innerHTML =
+    '<div class="sheet-card">' +
+      '<div class="sheet-head"><b>设置</b><span class="sheet-x" id="setClose">✕</span></div>' +
+      '<div class="setsec">窗口</div>' +
+      '<div class="setrow"><label><input type="checkbox" id="setOnTop">窗口钉在最上层（桌面版生效）</label></div>' +
+      '<div class="setsec">桌面通知</div>' +
+      '<div class="setrow"><label><input type="checkbox" id="setOn">开启通知（Windows 系统通知）</label></div>' +
+      '<div class="setsec">提醒哪些学院</div>' +
+      '<div class="setgrid" id="setTracks">' + trackBoxes + '</div>' +
+      '<div class="setsec">提醒时机</div>' +
+      '<div class="setrow"><label><input type="checkbox" id="setBefore">下课前提醒</label>' +
+        '提前 <input type="number" id="setMin" min="1" max="30"> 分钟</div>' +
+      '<div class="setrow"><label><input type="checkbox" id="setNext">上课前提醒</label></div>' +
+      '<div class="setrow"><label><input type="checkbox" id="setStart">开始上课时提醒</label></div>' +
+      '<div class="setrow"><label><input type="checkbox" id="setEnd">下课时提醒</label></div>' +
+      '<button class="settest" id="setTest" type="button">发一条测试通知</button>' +
+      '<div class="setnote" id="setNote"></div>' +
+    '</div>';
+  document.body.appendChild(sheet);
+
+  loadCfg();
+  refreshSetUI();
+  var note = document.getElementById('setNote');
+  if (note) note.textContent = pywvReady
+    ? '桌面版：走 Windows 系统通知中心，可在「设置 → 系统 → 通知」里管理。'
+    : '当前是浏览器/网页版：优先用系统通知，若未授权则显示页面内提示。';
+
+  function bind(id, key, isNum){
+    var e = document.getElementById(id);
+    if (!e) return;
+    e.addEventListener('change', function(){
+      if (isNum){ var v = parseInt(e.value, 10); notifyCfg[key] = (v >= 1 && v <= 30) ? v : 5; }
+      else notifyCfg[key] = e.checked;
+      saveCfg(); refreshSetUI();
+      if (key === 'onTop') applyOnTop();
+      if (key === 'on' && notifyCfg.on) checkNotify();
+    });
+  }
+  bind('setOnTop','onTop'); bind('setOn','on'); bind('setBefore','before');
+  bind('setNext','next'); bind('setStart','start'); bind('setEnd','end');
+  bind('setMin','min', true);
+
+  var host = document.getElementById('setTracks');
+  if (host) host.addEventListener('click', function(e){
+    var lab = e.target;
+    while (lab && lab !== host && lab.tagName !== 'LABEL') lab = lab.parentNode;
+    if (!lab || lab === host) return;
+    var i = parseInt(lab.getAttribute('data-i'), 10);
+    if (isNaN(i)) return;
+    e.preventDefault();
+    notifyCfg.tracks[i] = !notifyCfg.tracks[i];
+    saveCfg(); refreshSetUI();
+  });
+
+  document.getElementById('setBtn').addEventListener('click', function(){ sheet.classList.add('on'); });
+  document.getElementById('setClose').addEventListener('click', function(){ sheet.classList.remove('on'); });
+  sheet.addEventListener('click', function(e){ if (e.target === sheet) sheet.classList.remove('on'); });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && sheet.classList.contains('on')) sheet.classList.remove('on');
+  });
+  document.getElementById('setTest').addEventListener('click', function(){
+    var d = new Date(), m = d.getHours() * 60 + d.getMinutes();
+    var i = notifyCfg.tracks.indexOf(true); if (i < 0) i = 0;
+    var t = TRACKS[i], cur = segAtMin(i, m);
+    var body = cur ? (cur.label + ' ' + fmt(cur.s) + '–' + fmt(cur.e)) : '当前无课';
+    var r = sendNotify(t.name + ' · 这是一条测试通知', body + '（' + fmt(m) + '）');
+    inPageToast(t.name + ' · 这是一条测试通知', body);
+    var note2 = document.getElementById('setNote');
+    if (note2) note2.textContent = (r === 'native')
+      ? '已发送到 Windows 通知中心 ✓ 若没看到弹窗，去右下角通知中心找找。'
+      : (r === 'web' ? '已用浏览器通知发送 ✓' : '当前环境只支持页面内提示（桌面版才会调用系统通知）。');
+  });
+
+  function markReady(){
+    if (pywvReady) return;
+    pywvReady = true;
+    applyOnTop();
+    var n = document.getElementById('setNote');
+    if (n) n.textContent = '桌面版：走 Windows 系统通知中心，可在「设置 → 系统 → 通知」里管理。';
+  }
+  (function syncTop(){
+    var base = apiBase();
+    if (!base) return;
+    fetch(base + '/state').then(function(r){ return r.json(); }).then(function(d){
+      if (d && typeof d.onTop === 'boolean'){ notifyCfg.onTop = d.onTop; refreshPin(); refreshSetUI(); }
+    }).catch(function(){});
+  })();
+  if (pywvApi() || apiBase()) markReady();
+  /* pywebview 注入 api 的时机不一定早于本页脚本，主动轮询兜底 */
+  var bridgeTries = 0;
+  (function waitBridge(){
+    if (pywvApi() || apiBase()){ markReady(); return; }
+    if (++bridgeTries < 60) setTimeout(waitBridge, 500);
+  })();
+  window.SQZY_CHECKNOTIFY = checkNotify;   /* 自检钩子 */
+  window.SQZY_SEGAT = segAtMin;
+  window.SQZY_CFG = notifyCfg;
+  setInterval(checkNotify, 15000);
+  setTimeout(checkNotify, 3000);
+}
+
 /* ===================== Ctrl + 滚轮缩放 ===================== */
 /* 打包成 exe 后，pywebview 会把 WebView2 的“浏览器加速键”关掉（它绑在 debug 开关上），
    连 Ctrl+滚轮缩放一起失效。这里由页面自己接管，任何环境都能缩放，且设置会被记住。 */
@@ -1135,6 +1412,7 @@ bindToTop();
 bindNoCopy();
 initZoom();
 bindNowBar();
+initSettings();
 bindProtect();
 renderNow();
 setInterval(renderNow, 20000);
