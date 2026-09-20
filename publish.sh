@@ -32,6 +32,24 @@ if ! python smoke_page.py "$HTML"; then
 fi
 echo
 
+# ---- 交互遍历：真点真滚一遍（悬停/钉住、设置、通知判定、缩放、防调试…） ----
+echo "交互遍历测试（无头浏览器 + CDP，约 1 分钟）..."
+if ! python functest_page.py "$HTML"; then
+  echo
+  echo "交互遍历未通过，已中止发布（线上内容不受影响）。"
+  exit 1
+fi
+echo
+
+# ---- 本地接口自检：exe 侧的信箱 / 通知 / 版本接口 ----
+echo "本地接口自检（源码模式，几秒）..."
+if ! python selftest_api.py app.py 19199; then
+  echo
+  echo "接口自检未通过，已中止发布（线上内容不受影响）。"
+  exit 1
+fi
+echo
+
 rm -rf "$OUT"
 mkdir -p "$OUT"
 cp "$HTML" "$OUT/index.html"
