@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <title>宿迁职业技术学院作息时间表</title>
+<script>/* 安卓（手机/平板 App）上「置顶」「切换横竖版」没意义，整页样式里直接不显示；
+   这里尽早打标记，免得按钮先闪一下。 */
+if (/Android/i.test(navigator.userAgent || '')) document.documentElement.setAttribute('data-android', '1');</script>
 <style>
   :root{
     --am:#2563eb;      /* 上午正课 */
@@ -72,6 +75,10 @@
   /* 滚动条不显示，但照样能滚：设置面板右侧那条灰条、手机版横滑时间轴的长条都不再出现 */
   *{scrollbar-width:none;-ms-overflow-style:none}
   *::-webkit-scrollbar{width:0;height:0;display:none}
+
+  /* 安卓 App 里这两个按钮没用：置顶是桌面窗口的事，横竖版在手机上本来就是竖版（自动） */
+  html[data-android="1"] #devBtn,
+  html[data-android="1"] #topBtn{display:none !important}
   .sheet-head{display:flex;align-items:center;justify-content:space-between}
   .sheet-head b{font-size:16px;color:#0f172a}
   .sheet-x{cursor:pointer;color:#94a3b8;font-size:15px;padding:2px 7px;border-radius:7px}
@@ -539,6 +546,8 @@ function applyDevice(mode){
 }
 var devMode = 'auto';
 function initDevice(){
+  /* 安卓 App（哪怕 UA 里没写 Android，只要有原生桥）也走同一套隐藏规则 */
+  try{ if (window.SQZY_ANDROID) document.documentElement.setAttribute('data-android', '1'); }catch(e){}
   /* 清掉旧版本存下的“手动模式”记忆值：以前点过按钮就会一直卡在手动模式，
      导致窗口变窄也不再自动切竖版。现在每次打开一律从“自动”开始。 */
   safeDel(DEV_KEY);
@@ -1098,7 +1107,7 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2026.9.27';
+var APP_VERSION = 'v2026.9.28';
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 var latestInfo = null;
@@ -1166,6 +1175,13 @@ function inPageToast(title, body){
   document.body.appendChild(el);
   setTimeout(function(){ el.classList.add('out'); }, 4200);
   setTimeout(function(){ if (el.parentNode) el.parentNode.removeChild(el); }, 5000);
+}
+function isAndroid(){
+  /* 三处任一成立就算安卓：原生桥、页面开头的标记（CSS 也用它）、UA。
+     统一读标记，是为了让 JS 和「隐藏按钮」的 CSS 用同一个判断。 */
+  try{ if (window.SQZY_ANDROID) return true; }catch(e){}
+  if (document.documentElement.getAttribute('data-android') === '1') return true;
+  return /Android/i.test(navigator.userAgent || '');
 }
 function platformText(){
   var ua = navigator.userAgent || '';
@@ -1388,8 +1404,9 @@ function initSettings(){
     '<div class="sheet-card">' +
       '<div class="sheet-head"><b>设置</b><span class="sheet-x" id="setClose">✕</span></div>' +
       '<div class="setnote" style="margin:0 0 4px">改动立即生效并自动保存，不用点确认；关掉窗口下次打开还在。</div>' +
-      '<div class="setsec">桌面通知</div>' +
-      '<div class="setrow"><label><input type="checkbox" id="setOn">开启通知（Windows 系统通知）</label></div>' +
+      '<div class="setsec" id="notifySecName">桌面通知</div>' +
+      '<div class="setrow"><label><input type="checkbox" id="setOn">' +
+        '<span id="setOnLabel">开启通知（Windows 系统通知）</span></label></div>' +
       '<div class="setsec">提醒哪些学院</div>' +
       '<div class="setgrid" id="setTracks">' + trackBoxes + '</div>' +
       '<div class="setsec">提醒时机</div>' +
@@ -1422,11 +1439,18 @@ function initSettings(){
 
   loadCfg();
   refreshSetUI();
+  if (isAndroid()){
+    var secName = document.getElementById('notifySecName');
+    if (secName) secName.textContent = '通知';
+    var onLabel = document.getElementById('setOnLabel');
+    if (onLabel) onLabel.textContent = '开启通知（安卓系统通知）';
+  }
   var note = document.getElementById('setNote');
-  if (window.SQZY_ANDROID && !pywvReady && note) note.textContent = '手机版：走安卓系统通知，可在「设置 → 通知」里管理。';
   if (note) note.textContent = pywvReady
     ? '桌面版：走 Windows 系统通知中心，可在「设置 → 系统 → 通知」里管理。'
-    : '当前是浏览器/网页版：优先用系统通知，若未授权则显示页面内提示。';
+    : (isAndroid()
+        ? '手机版：走安卓系统通知，可在「设置 → 通知 → 本应用」里管理。'
+        : '当前是浏览器/网页版：优先用系统通知，若未授权则显示页面内提示。');
 
   function bind(id, key, isNum){
     var e = document.getElementById(id);
