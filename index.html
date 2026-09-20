@@ -493,6 +493,7 @@ function stateText(st){
 var DEV_KEY = 'sqtc-devmode';
 function safeGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
 function safeSet(k, v){ try{ localStorage.setItem(k, v); }catch(e){} }
+  function safeDel(k){ try{ localStorage.removeItem(k); }catch(e){} }
 
 function detectByUA(){
   var ua = navigator.userAgent || '';
@@ -537,7 +538,7 @@ var devMode = 'auto';
 function initDevice(){
   /* 清掉旧版本存下的“手动模式”记忆值：以前点过按钮就会一直卡在手动模式，
      导致窗口变窄也不再自动切竖版。现在每次打开一律从“自动”开始。 */
-  try { localStorage.removeItem(DEV_KEY); } catch(e){}
+  safeDel(DEV_KEY);
   applyDevice('auto');
   document.getElementById('devBtn').addEventListener('click', function(){
     var next = this.getAttribute('data-next');
@@ -1119,8 +1120,12 @@ function sendNotify(title, body){
   /* 安卓版：WebView 不支持 Notification API，靠原生桥发系统通知 */
   try{
     if (window.SQZY_ANDROID && window.SQZY_ANDROID.notify){
-      window.SQZY_ANDROID.notify(title, body);
-      return 'native';
+            /* 桥会返回 false（例如通知权限被拒）—— 这时不能假装成功，
+         要落到页面内提示，用户才知道发生了什么 */
+      if (window.SQZY_ANDROID.notify(title, body) !== false) return 'native';
+      inPageToast(title, body);
+      inPageToast('通知权限未开启', '请在「设置 → 应用 → 通知」里允许本应用发送通知');
+      return 'inpage';
     }
   }catch(e){}
   var base = apiBase();
