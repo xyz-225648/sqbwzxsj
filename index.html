@@ -1426,12 +1426,15 @@ function initSettings(){
     var i = notifyCfg.tracks.indexOf(true); if (i < 0) i = 0;
     var t = TRACKS[i], cur = segAtMin(i, m);
     var body = cur ? (cur.label + ' ' + fmt(cur.s) + '–' + fmt(cur.e)) : '当前无课';
-    var r = sendNotify(t.name + ' · 这是一条测试通知', body + '（' + fmt(m) + '）');
-    inPageToast(t.name + ' · 这是一条测试通知', body);
+    var tTitle = t.name + ' · 这是一条测试通知';
+    var tBody = body + '（' + fmt(m) + '）';
+    var r = sendNotify(tTitle, tBody);
+    inPageToast(tTitle, tBody);
     var note2 = document.getElementById('setNote');
     if (note2) note2.textContent = (r === 'native')
-      ? '已发送到 Windows 通知中心 ✓ 若没看到弹窗，去右下角通知中心找找。'
-      : (r === 'web' ? '已用浏览器通知发送 ✓' : '当前环境只支持页面内提示（桌面版才会调用系统通知）。');
+      ? '已发给系统通知中心。若没看到弹窗，去右下角「通知中心」找找（可能被专注助手拦下）。'
+      : (r === 'web' ? '已用浏览器通知发送 ✓'
+                     : '当前环境没有可用的系统通知通道，只显示了页面内提示。');
   });
 
   function markReady(){
