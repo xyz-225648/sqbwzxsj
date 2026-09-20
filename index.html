@@ -93,6 +93,7 @@
            border-radius:9px;padding:9px 14px;cursor:pointer;width:100%;margin-top:8px}
   .settest:hover{background:#1d4ed8}
   .setnote{font-size:12px;color:#94a3b8;line-height:1.7;margin-top:9px}
+  .setnote.hi{color:#b45309;font-weight:600}
   .sysToast{position:fixed;right:16px;bottom:16px;z-index:9999;max-width:330px;background:#0f172a;color:#fff;
             border-radius:12px;padding:12px 15px;box-shadow:0 14px 40px rgba(15,23,42,.4)}
   .sysToast b{display:block;font-size:13px;margin-bottom:3px}
@@ -1100,6 +1101,9 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
+var APP_VERSION = 'v2026.9.20';
+var SEEN_VER_KEY = 'sqzy-seen-ver';
+var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 var notifyCfg = { on:true, onTop:true, before:true, next:true, start:false, end:false, min:5,
                   tracks:[true,true,true,true] };
 var firedKeys = {};
@@ -1122,6 +1126,13 @@ function apiBase(){
 }
 
 function sendNotify(title, body){
+  /* 安卓版：WebView 不支持 Notification API，靠原生桥发系统通知 */
+  try{
+    if (window.SQZY_ANDROID && window.SQZY_ANDROID.notify){
+      window.SQZY_ANDROID.notify(title, body);
+      return 'native';
+    }
+  }catch(e){}
   var api = pywvApi();
   if (api && api.notify){ try{ api.notify(title, body); return 'native'; }catch(e){} }
   var base = apiBase();
@@ -1154,6 +1165,135 @@ function applyOnTop(){
   if (base){
     try{ fetch(base + '/ontop?on=' + (notifyCfg.onTop ? 1 : 0)).catch(function(){}); }catch(e){}
   }
+}
+function platformText(){
+  var ua = navigator.userAgent || '';
+  if (window.SQZY_ANDROID && window.SQZY_ANDROID.platform) return 'Android 手机版';
+  if (apiBase() || pywvApi()) return 'Windows 桌面版';
+  if (/Android/i.test(ua)) return 'Android 手机版';
+  if (/iPhone|iPad|iPod/i.test(ua)) return 'iOS 网页版';
+  return '浏览器版';
+}
+function majorOf(v){
+  var m = /^v?([0-9]+\.[0-9]+)/.exec(String(v || ''));
+  return m ? m[1] : String(v || '');
+}
+function renderAbout(){
+  var ver = document.getElementById('aboutVer');
+  if (ver) ver.textContent = '当前版本：' + APP_VERSION + ' | ' + platformText();
+  var note = document.getElementById('aboutNote');
+  if (!note || !latestInfo || !latestInfo.v) return;
+  if (latestInfo.v === APP_VERSION){
+    note.textContent = '已是最新版本（' + (latestInfo.t || '') + '）';
+    note.className = 'setnote';
+  } else {
+    note.textContent = '发现新版本 ' + latestInfo.v + '（' + (latestInfo.t || '') + '）';
+    note.className = 'setnote hi';
+  }
+}
+function closeDialog(id){
+  var d = document.getElementById(id);
+  if (d && d.parentNode) d.parentNode.removeChild(d);
+}
+function showUpdateDialog(info){
+  closeDialog('upDlg');
+  var wrap = document.createElement('div');
+  wrap.className = 'sheet on';
+  wrap.id = 'upDlg';
+  var card = document.createElement('div');
+  card.className = 'sheet-card';
+  card.style.maxWidth = '410px';
+
+  var head = document.createElement('div');
+  head.className = 'sheet-head';
+  var t1 = document.createElement('b');
+  t1.textContent = '发现新版本';
+  var x = document.createElement('span');
+  x.className = 'sheet-x'; x.textContent = '✕';
+  head.appendChild(t1); head.appendChild(x);
+
+  var body = document.createElement('div');
+  body.className = 'setrow';
+  body.style.display = 'block';
+  body.style.lineHeight = '1.95';
+  body.appendChild(document.createTextNode('当前版本：' + APP_VERSION));
+  body.appendChild(document.createElement('br'));
+  body.appendChild(document.createTextNode('最新版本：'));
+  var bv = document.createElement('b');
+  bv.style.color = '#1d4ed8';
+  bv.textContent = info.v;
+  body.appendChild(bv);
+  if (info.t){
+    body.appendChild(document.createElement('br'));
+    body.appendChild(document.createTextNode('发布时间：' + info.t));
+  }
+
+  var note = document.createElement('div');
+  note.className = 'setnote';
+  note.textContent = '电脑版：网页内容会自动更新，无需操作。手机版：点下面按钮下载新版 apk，覆盖安装即可（不会丢数据）。';
+
+  var apk = document.createElement('a');
+  apk.className = 'settest';
+  apk.style.display = 'block';
+  apk.style.textAlign = 'center';
+  apk.style.textDecoration = 'none';
+  apk.style.boxSizing = 'border-box';
+  apk.href = 'https://gitee.com/xyz-225648/sqbwzxsj/releases/download/v1.0/'
+           + encodeURIComponent('宿迁职业技术学院作息时间表.apk');
+  apk.target = '_blank';
+  apk.rel = 'noopener';
+  apk.textContent = '下载安卓新版';
+
+  var later = document.createElement('button');
+  later.type = 'button';
+  later.className = 'settest';
+  later.style.background = '#e2e8f0';
+  later.style.color = '#0f172a';
+  later.textContent = '稍后再说';
+
+  card.appendChild(head); card.appendChild(body); card.appendChild(note);
+  card.appendChild(apk); card.appendChild(later);
+  wrap.appendChild(card);
+  document.body.appendChild(wrap);
+
+  x.addEventListener('click', function(){ closeDialog('upDlg'); });
+  later.addEventListener('click', function(){ closeDialog('upDlg'); });
+  wrap.addEventListener('click', function(e){ if (e.target === wrap) closeDialog('upDlg'); });
+}
+function applyUpdateInfo(info, manual){
+  latestInfo = info;
+  renderAbout();
+  if (!info || !info.v){
+    if (manual) alert('检查更新失败，请检查网络后重试。');
+    return;
+  }
+  if (info.v === APP_VERSION){
+    if (manual) alert('已是最新版本：' + APP_VERSION);
+    return;
+  }
+  if (majorOf(info.v) !== majorOf(APP_VERSION)){
+    if (manual || safeGet(SEEN_VER_KEY) !== info.v){
+      safeSet(SEEN_VER_KEY, info.v);
+      showUpdateDialog(info);
+    }
+  } else if (manual){
+    alert('有小幅更新：' + info.v + '（' + (info.t || '') + '）');
+  }
+}
+function checkAppUpdate(manual){
+  var note = document.getElementById('aboutNote');
+  if (manual && note){ note.textContent = '正在检查…'; note.className = 'setnote'; }
+  var s = document.createElement('script');
+  s.src = UPDATE_BASE + 'version.txt?t=' + Date.now();
+  s.onload = function(){
+    applyUpdateInfo(window.SQZY_LATEST || null, manual);
+    if (s.parentNode) s.parentNode.removeChild(s);
+  };
+  s.onerror = function(){
+    applyUpdateInfo(null, manual);
+    if (s.parentNode) s.parentNode.removeChild(s);
+  };
+  document.head.appendChild(s);
 }
 function refreshPin(){
   var pin = document.getElementById('pinBtn');
@@ -1251,12 +1391,22 @@ function initSettings(){
       '<div class="setrow"><label><input type="checkbox" id="setEnd">下课时提醒</label></div>' +
       '<button class="settest" id="setTest" type="button">发一条测试通知</button>' +
       '<div class="setnote" id="setNote"></div>' +
+      '<div class="setsec">关于</div>' +
+      '<div class="setrow" style="align-items:flex-start;gap:10px">' +
+        '<div style="flex:1;min-width:0">' +
+          '<b style="font-size:13px">宿迁职业技术学院作息时间表</b>' +
+          '<div class="setnote" id="aboutVer" style="margin-top:3px"></div>' +
+        '</div>' +
+        '<button class="settest" id="aboutCheck" type="button" style="width:auto;margin:0;white-space:nowrap">检查更新</button>' +
+      '</div>' +
+      '<div class="setnote" id="aboutNote"></div>' +
     '</div>';
   document.body.appendChild(sheet);
 
   loadCfg();
   refreshSetUI();
   var note = document.getElementById('setNote');
+  if (window.SQZY_ANDROID && !pywvReady && note) note.textContent = '手机版：走安卓系统通知，可在「设置 → 通知」里管理。';
   if (note) note.textContent = pywvReady
     ? '桌面版：走 Windows 系统通知中心，可在「设置 → 系统 → 通知」里管理。'
     : '当前是浏览器/网页版：优先用系统通知，若未授权则显示页面内提示。';
@@ -1294,6 +1444,7 @@ function initSettings(){
   document.addEventListener('keydown', function(e){
     if (e.key === 'Escape' && sheet.classList.contains('on')) sheet.classList.remove('on');
   });
+  document.getElementById('aboutCheck').addEventListener('click', function(){ checkAppUpdate(true); });
   document.getElementById('setTest').addEventListener('click', function(){
     var d = new Date(), m = d.getHours() * 60 + d.getMinutes();
     var i = notifyCfg.tracks.indexOf(true); if (i < 0) i = 0;
@@ -1321,6 +1472,8 @@ function initSettings(){
       if (d && typeof d.onTop === 'boolean'){ notifyCfg.onTop = d.onTop; refreshPin(); refreshSetUI(); }
     }).catch(function(){});
   })();
+  renderAbout();
+  setTimeout(function(){ checkAppUpdate(false); }, 1500);
   if (pywvApi() || apiBase()) markReady();
   /* pywebview 注入 api 的时机不一定早于本页脚本，主动轮询兜底 */
   var bridgeTries = 0;
