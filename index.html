@@ -69,6 +69,9 @@
   .sheet-card{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
               width:min(430px,calc(100vw - 28px));max-height:calc(100vh - 40px);overflow:auto;
               background:#fff;border-radius:15px;box-shadow:0 20px 60px rgba(15,23,42,.35);padding:16px 18px 18px}
+  /* 滚动条不显示，但照样能滚：设置面板右侧那条灰条、手机版横滑时间轴的长条都不再出现 */
+  *{scrollbar-width:none;-ms-overflow-style:none}
+  *::-webkit-scrollbar{width:0;height:0;display:none}
   .sheet-head{display:flex;align-items:center;justify-content:space-between}
   .sheet-head b{font-size:16px;color:#0f172a}
   .sheet-x{cursor:pointer;color:#94a3b8;font-size:15px;padding:2px 7px;border-radius:7px}
@@ -1095,7 +1098,7 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2026.9.24';
+var APP_VERSION = 'v2026.9.25';
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 var latestInfo = null;
