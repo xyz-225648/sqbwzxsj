@@ -1095,7 +1095,7 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2026.9.23';
+var APP_VERSION = 'v2026.9.24';
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 var latestInfo = null;
@@ -1114,7 +1114,15 @@ function loadCfg(){
 function saveCfg(){ try{ safeSet(NOTIFY_KEY, JSON.stringify(notifyCfg)); }catch(e){} }
 
 function apiBase(){
-  return (typeof window.SQZY_API === 'string' && window.SQZY_API) ? window.SQZY_API : null;
+  if (typeof window.SQZY_API === 'string' && window.SQZY_API) return window.SQZY_API;
+  /* 兜底：页面本身就是从桌面版助手的本地端口发出来的（http://127.0.0.1:端口），
+     说明这就是桌面版。万一注入漏了，通知也不会掉进「网页版」通道。 */
+  try {
+    if (location.protocol === 'http:' &&
+        (location.hostname === '127.0.0.1' || location.hostname === 'localhost'))
+      return location.origin;
+  } catch(e){}
+  return null;
 }
 
 function sendNotify(title, body){
