@@ -38,6 +38,12 @@ try:
         print('  ✗ 助手进程 15 秒内没起来（端口 %d）' % port)
         rc = 1
     else:
+        st, body = call('/')
+        ok_page = ('id="nowBar"' in body) and ("APP_VERSION = 'v" in body)
+        print('  GET /      HTTP %d  %d 字节  页面自检 %s  ← exe 现在用 http 把页面发给窗口'
+              % (st, len(body.encode('utf-8')), 'OK' if ok_page else '失败'))
+        if not ok_page:
+            rc = 1
         st, body = call('/notify', title='exe 接口自检', body='不带令牌的通知测试')
         print('  /notify    HTTP %d  %s   ← ok:true 说明不再要求令牌' % (st, body))
         if '"ok": true' not in body and '"ok":true' not in body:
