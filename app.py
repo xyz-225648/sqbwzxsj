@@ -16,7 +16,6 @@ import http.server
 import json
 import os
 import re
-import secrets
 import socket
 import socketserver
 import subprocess
@@ -154,9 +153,24 @@ def check_update():
     return None, None
 
 
+def wait_window_ready(window, timeout=20.0):
+    """等 webview.start() 把窗口建出来。
+    在那之前 window.gui 还是 None，load_url() 直接 AttributeError ——
+    页面已经写进缓存了，但这一次换不上，用户要等到下次打开才看到新版。"""
+    end = time.time() + timeout
+    while time.time() < end:
+        if getattr(window, 'gui', None) is not None:
+            return True
+        time.sleep(0.2)
+    return False
+
+
 def silent_update(window):
     html, ver = check_update()
     if not html:
+        return
+    if not wait_window_ready(window):
+        api_log('窗口还没建好，新版本 %s 留到下次打开再生效' % ver, 'warn')
         return
     try:
         # 走 http 重新加载，保持同一个 origin，设置不会因为换页而丢
@@ -251,7 +265,6 @@ def notify_windows(title, body):
 # ==================== 网页 <-> exe 的本地接口 ====================
 _PORT = [0]
 _HELPER = []
-_TOKEN = [secrets.token_hex(8)]
 
 
 def stop_helper():
@@ -341,17 +354,20 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
         if u.path == '/latest':
             info = None
             if UPDATE_BASE:
-                base = UPDATE_BASE if UPDATE_BASE.endswith('/') else UPDATE_BASE + '/'
-                for attempt in range(3):
-                    try:
-                        txt = http_text(base + 'version.txt?t=%d' % int(time.time()))
-                        m = re.search(r'\{.*\}', txt, re.S)
-                        if m:
-                            info = json.loads(m.group(0))
-                            break
-                    except Exception as exc:
-                        api_log('latest 第%d次失败 %r' % (attempt + 1, exc), 'warn')
-                        time.sleep(1)
+                for base in base_candidates():
+                    # version.txt 的 CDN 缓存偶尔会慢一拍，重试两次再放弃
+                    for attempt in range(3):
+                        try:
+                            txt = http_text(base + 'version.txt?t=%d' % int(time.time()))
+                            m = re.search(r'\{.*\}', txt, re.S)
+                            if m:
+                                info = json.loads(m.group(0))
+                                break
+                        except Exception as exc:
+                            api_log('latest 第%d次失败 %r' % (attempt + 1, exc), 'warn')
+                            time.sleep(1)
+                    if info:
+                        break
             api_log('latest -> %r' % (info,))
             return self._reply({'ok': bool(info), 'latest': info})
         if u.path == '/notify':
@@ -410,8 +426,7 @@ def with_api(html):
     """把本地接口地址注入页面（自动更新热替换后也要重新注入）"""
     if not _PORT[0]:
         return html
-    tag = ('<script>window.SQZY_API="http://127.0.0.1:%d";'
-           'window.SQZY_TOKEN="%s";</script>') % (_PORT[0], _TOKEN[0])
+    tag = '<script>window.SQZY_API="http://127.0.0.1:%d";</script>' % _PORT[0]
     if '<head>' in html:
         return html.replace('<head>', '<head>' + tag, 1)
     return tag + html
@@ -696,8 +711,7 @@ def win_show():
     ui_call(_do_show)
 
 
-def _do_quit():
-    _UI['exiting'] = True
+def _dispose_tray():
     try:
         tray = _UI.get('tray')
         if tray is not None:
@@ -706,6 +720,11 @@ def _do_quit():
             _UI['tray'] = None
     except Exception:
         pass
+
+
+def _do_quit():
+    _UI['exiting'] = True
+    _dispose_tray()
     try:
         form = _UI.get('form')
         if form is not None:
@@ -730,6 +749,7 @@ def _on_form_closing(sender, e):
             _do_hide()
         else:
             _UI['exiting'] = True
+            _dispose_tray()
             api_log('关闭按钮 → 直接退出')
     except Exception as exc:
         api_log('关闭处理失败 %r' % (exc,), 'warn')
@@ -801,6 +821,22 @@ def win_state_poller():
             pass
 
 
+def helper_ready(port, timeout=4.0):
+    """助手进程到底起来没有 —— 真连一次 /ping 才算数。
+    不确认就拿 http://127.0.0.1:端口 去开窗口，助手要是没起来，
+    用户看到的就是一页「无法访问此页面」（踩过）。"""
+    end = time.time() + timeout
+    while time.time() < end:
+        try:
+            with urllib.request.urlopen('http://127.0.0.1:%d/ping' % port, timeout=1) as r:
+                if r.status == 200:
+                    return True
+        except Exception:
+            pass
+        time.sleep(0.15)
+    return False
+
+
 def run_window(html):
     port = pick_free_port()
     if port:
@@ -832,6 +868,11 @@ def run_window(html):
             api_log('助手进程已起: %s' % ' '.join(argv[1:]))
         except Exception as exc:
             api_log('助手进程启动失败 %r' % (exc,), 'error')
+    if port and not helper_ready(port):
+        api_log('助手进程 4 秒内没有应答，本次改为直接塞页面（系统通知/窗口置顶会缺）', 'warn')
+        stop_helper()
+        _PORT[0] = 0
+        port = 0
 
     opts = dict(width=1120, height=760, min_size=(340, 480), resizable=True,
                 text_select=False, confirm_close=False, background_color='#f1f5f9')
