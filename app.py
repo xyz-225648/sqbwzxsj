@@ -503,6 +503,26 @@ WIN_DEFAULTS = {'always_on_top': False, 'close_mode': 'tray', 'show': 0}
 _UI = {'form': None, 'tray': None, 'icon': None, 'exiting': False}
 
 
+_INSTANCE_LOCK = []
+
+
+def acquire_instance_lock():
+    """单实例：已经有窗口在跑就返回 False。
+    第二个进程不建窗口，只把「请显示到前台」写进状态文件就退出。"""
+    try:
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        h = k32.CreateMutexW(None, False, 'Local\\sqzy_timetable_single_instance')
+        if not h:
+            return True
+        if k32.GetLastError() == 183:          # ERROR_ALREADY_EXISTS
+            return False
+        _INSTANCE_LOCK.append(h)               # 留住句柄，进程退出时系统自动释放
+        return True
+    except Exception:
+        return True
+
+
 def win_state_path():
     return os.path.join(cache_dir(), 'win_state.json')
 
@@ -635,6 +655,34 @@ def _do_show():
         form.Show()
         form.WindowState = FormWindowState.Normal
         form.Activate()
+        try:
+            # Activate() 常常抢不到焦点（Windows 的前台限制），下面这套是通用做法：
+            # 1) BringToFront + SW_RESTORE  2) AttachThreadInput 后 SetForegroundWindow
+            # 3) 最后把 TopMost 闪一下（最有效的一招），再按状态文件恢复
+            form.BringToFront()
+            import ctypes
+            from ctypes import wintypes
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+            user32.GetForegroundWindow.restype = wintypes.HWND
+            user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.c_void_p]
+            user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+            hwnd = wintypes.HWND(int(form.Handle))
+            user32.ShowWindow(hwnd, 9)          # SW_RESTORE
+            fg = user32.GetForegroundWindow()
+            tid_fg = user32.GetWindowThreadProcessId(fg, None)
+            tid_me = kernel32.GetCurrentThreadId()
+            if tid_fg and tid_fg != tid_me:
+                user32.AttachThreadInput(tid_me, tid_fg, True)
+                user32.SetForegroundWindow(hwnd)
+                user32.AttachThreadInput(tid_me, tid_fg, False)
+            else:
+                user32.SetForegroundWindow(hwnd)
+            keep = bool(form.TopMost)
+            form.TopMost = True
+            form.TopMost = keep
+        except Exception as exc:
+            api_log('抢前台失败 %r' % (exc,), 'warn')
         api_log('窗口已恢复显示')
     except Exception as exc:
         api_log('恢复窗口失败 %r' % (exc,), 'warn')
@@ -812,6 +860,18 @@ def run_window(html):
 def main():
     if '--api-server' in sys.argv:
         run_api_server(int(sys.argv[sys.argv.index('--api-server') + 1]))
+        return
+    if not acquire_instance_lock():
+        # 已经开着一个（哪怕它正藏在托盘里）：只请它显示到前台，本进程立刻退出。
+        try:
+            # 把「允许抢前台」的许可交给已在运行的那个进程，
+            # 否则 Windows 会把它的 SetForegroundWindow 拦下来（只闪任务栏）。
+            import ctypes
+            ctypes.windll.user32.AllowSetForegroundWindow(-1)     # ASFW_ANY
+        except Exception:
+            pass
+        write_win_state(show=int(time.time() * 1000))
+        api_log('已有实例在运行，已请它显示到前台，本进程退出')
         return
     html = load_current_html()
 
