@@ -100,7 +100,7 @@ else:
 ms = re.findall(r'<div class="m">([^<]*)</div>', body)
 print('  分方向卡片状态文字: %d 个 %s' % (len(ms), ('例: ' + ms[0]) if ms else ''))
 if len(ms) < 4:
-    fail.append('卡片只有 %d 个（应为 4）')
+    fail.append('卡片只有 %d 个（应为 4）' % len(ms))
 elif any(not x.strip() for x in ms):
     fail.append('有卡片的状态文字是空的 —— renderNow 没跑完')
 
