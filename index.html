@@ -1114,11 +1114,14 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2026.9.30';
+var APP_VERSION = 'v2.0.1';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
+/* 安卓安装包挂在哪个发行版 tag 下。故意固定在 v1.0 不动：tag 一换，
+   老页面里写死的下载链接就会 404；附件内容每次发布时原地替换，链接永远有效。 */
+var RELEASE_TAG = 'v2.0.1';
 var latestInfo = null;
-var notifyCfg = { on:true, onTop:true, before:true, next:true, start:false, end:false, min:5,
+var notifyCfg = { on:true, before:true, next:true, start:false, end:false, min:5,
                   tracks:[true,true,true,true] };
 var firedKeys = {};
 var pywvReady = false;
@@ -1159,9 +1162,13 @@ function sendNotify(title, body){
   var base = apiBase();
   if (base){
     try{
-      fetch(base + '/notify?k=' + encodeURIComponent(window.SQZY_TOKEN || '')
-                  + '&title=' + encodeURIComponent(title)
-                  + '&body=' + encodeURIComponent(body)).catch(function(){});
+      /* 以前这里发完就走、直接报「已发送」——本地助手要是没起来（或老版 exe 没这个接口），
+         用户看到的就是一句假话。现在等回包，ok 不是 true 就落到页面内提示。 */
+      fetch(base + '/notify?title=' + encodeURIComponent(title)
+                  + '&body=' + encodeURIComponent(body))
+        .then(function(r){ return r.json(); })
+        .then(function(o){ if (!o || !o.ok) notifyFallback(); })
+        .catch(function(){ notifyFallback(); });
       return 'native';
     }catch(e){}
   }
@@ -1172,6 +1179,12 @@ function sendNotify(title, body){
     try{ new Notification(title, { body: body, icon: ic || undefined }); return 'web'; }catch(e){}
   }
   return null;
+}
+function notifyFallback(){
+  /* 系统通知没送出去时的兜底：明确说一声，别让用户以为通知已经发出去了 */
+  inPageToast('系统通知没发出去', '本机通知通道没有响应，已改用页面内提示');
+  var n = document.getElementById('setNote');
+  if (n) n.textContent = '系统通知发送失败：没连上本机通知通道（重启一下程序试试）。';
 }
 function inPageToast(title, body){
   var el = document.createElement('div');
@@ -1299,7 +1312,7 @@ function showUpdateDialog(info){
   apk.style.textAlign = 'center';
   apk.style.textDecoration = 'none';
   apk.style.boxSizing = 'border-box';
-  apk.href = 'https://gitee.com/xyz-225648/sqbwzxsj/releases/download/v1.0/'
+  apk.href = 'https://gitee.com/xyz-225648/sqbwzxsj/releases/download/' + RELEASE_TAG + '/'
            + encodeURIComponent('宿迁职业技术学院作息时间表.apk');
   apk.target = '_blank';
   apk.rel = 'noopener';
@@ -1349,7 +1362,7 @@ function checkAppUpdate(manual){
   var base = apiBase();
   if (base){
     try{
-      fetch(base + '/latest?k=' + encodeURIComponent(window.SQZY_TOKEN || '')).then(function(r){ return r.json(); }).then(function(d){
+      fetch(base + '/latest').then(function(r){ return r.json(); }).then(function(d){
         applyUpdateInfo((d && d.latest) ? d.latest : null, manual);
       }).catch(function(){ applyUpdateInfo(null, manual); });
       return;
@@ -1526,14 +1539,17 @@ function initSettings(){
     saveCfg(); refreshSetUI();
   });
 
-  document.getElementById('setBtn').addEventListener('click', function(){ sheetOpen(sheet); });
-  document.getElementById('setClose').addEventListener('click', function(){ sheetClose(sheet); });
+  var setBtn = document.getElementById('setBtn');
+  if (setBtn) setBtn.addEventListener('click', function(){ sheetOpen(sheet); });
+  var setX = document.getElementById('setClose');
+  if (setX) setX.addEventListener('click', function(){ sheetClose(sheet); });
   sheet.addEventListener('click', function(e){ if (e.target === sheet) sheetClose(sheet); });
   document.addEventListener('keydown', function(e){
     if (e.key === 'Escape' && sheet.classList.contains('on')) sheetClose(sheet);
   });
-  document.getElementById('aboutCheck').addEventListener('click', function(){ checkAppUpdate(true); });
-  document.getElementById('setTest').addEventListener('click', function(){
+  var aboutBtn = document.getElementById('aboutCheck');
+  if (aboutBtn) aboutBtn.addEventListener('click', function(){ checkAppUpdate(true); });
+  function sendTestNotify(){
     var d = new Date(), m = d.getHours() * 60 + d.getMinutes();
     var i = notifyCfg.tracks.indexOf(true); if (i < 0) i = 0;
     var t = TRACKS[i], cur = segAtMin(i, m);
@@ -1547,7 +1563,9 @@ function initSettings(){
       ? '已发给系统通知中心。若没看到弹窗，去右下角「通知中心」找找（可能被专注助手拦下）。'
       : (r === 'web' ? '已用浏览器通知发送 ✓'
                      : '当前环境没有可用的系统通知通道，只显示了页面内提示。');
-  });
+  }
+  var setTestBtn = document.getElementById('setTest');
+  if (setTestBtn) setTestBtn.addEventListener('click', sendTestNotify);
 
   function markReady(){
     if (pywvReady) return;
