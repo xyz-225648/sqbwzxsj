@@ -1111,9 +1111,6 @@ function loadCfg(){
 }
 function saveCfg(){ try{ safeSet(NOTIFY_KEY, JSON.stringify(notifyCfg)); }catch(e){} }
 
-function pywvApi(){
-  return (window.pywebview && window.pywebview.api) ? window.pywebview.api : null;
-}
 function apiBase(){
   return (typeof window.SQZY_API === 'string' && window.SQZY_API) ? window.SQZY_API : null;
 }
@@ -1126,13 +1123,12 @@ function sendNotify(title, body){
       return 'native';
     }
   }catch(e){}
-  var api = pywvApi();
-  if (api && api.notify){ try{ api.notify(title, body); return 'native'; }catch(e){} }
   var base = apiBase();
   if (base){
     try{
-      fetch(base + '/notify?title=' + encodeURIComponent(title) + '&body=' + encodeURIComponent(body))
-        .catch(function(){});
+      fetch(base + '/notify?k=' + encodeURIComponent(window.SQZY_TOKEN || '')
+                  + '&title=' + encodeURIComponent(title)
+                  + '&body=' + encodeURIComponent(body)).catch(function(){});
       return 'native';
     }catch(e){}
   }
@@ -1154,7 +1150,7 @@ function inPageToast(title, body){
 function platformText(){
   var ua = navigator.userAgent || '';
   if (window.SQZY_ANDROID && window.SQZY_ANDROID.platform) return 'Android 手机版';
-  if (apiBase() || pywvApi()) return 'Windows 桌面版';
+  if (apiBase()) return 'Windows 桌面版';
   if (/Android/i.test(ua)) return 'Android 手机版';
   if (/iPhone|iPad|iPod/i.test(ua)) return 'iOS 网页版';
   return '浏览器版';
@@ -1273,7 +1269,7 @@ function checkAppUpdate(manual){
   var base = apiBase();
   if (base){
     try{
-      fetch(base + '/latest').then(function(r){ return r.json(); }).then(function(d){
+      fetch(base + '/latest?k=' + encodeURIComponent(window.SQZY_TOKEN || '')).then(function(r){ return r.json(); }).then(function(d){
         applyUpdateInfo((d && d.latest) ? d.latest : null, manual);
       }).catch(function(){ applyUpdateInfo(null, manual); });
       return;
@@ -1309,8 +1305,13 @@ function segAtMin(i, m){
 }
 function isClassSeg(g){ return !!g && ['gap','noon','eve'].indexOf(g.cat) < 0; }
 function fireNotify(i, m, kind, title, body){
-  var key = i + '|' + m + '|' + kind;
+  /* 键里必须带日期：否则今天发过之后，明天同一时刻会被当成重复而不再提醒 */
+  var today = new Date();
+  var dayKey = today.getFullYear() + '-' + (today.getMonth() + 1) + '-' + today.getDate();
+  var key = dayKey + '|' + i + '|' + m + '|' + kind;
   if (firedKeys[key]) return;
+  /* 只保留今天的记录，避免越攒越多 */
+  Object.keys(firedKeys).forEach(function(k){ if (k.indexOf(dayKey + '|') !== 0) delete firedKeys[k]; });
   firedKeys[key] = 1;
   try{ safeSet(FIRED_KEY, JSON.stringify(firedKeys)); }catch(e){}
   sendNotify(title, body);
@@ -1436,11 +1437,11 @@ function initSettings(){
   }
   renderAbout();
   setTimeout(function(){ checkAppUpdate(false); }, 1500);
-  if (pywvApi() || apiBase()) markReady();
+  if (apiBase()) markReady();
   /* pywebview 注入 api 的时机不一定早于本页脚本，主动轮询兜底 */
   var bridgeTries = 0;
   (function waitBridge(){
-    if (pywvApi() || apiBase()){ markReady(); return; }
+    if (apiBase()){ markReady(); return; }
     if (++bridgeTries < 60) setTimeout(waitBridge, 500);
   })();
   window.SQZY_CHECKNOTIFY = checkNotify;   /* 自检钩子 */
