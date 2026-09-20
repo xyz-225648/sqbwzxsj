@@ -1283,6 +1283,17 @@ function applyUpdateInfo(info, manual){
 function checkAppUpdate(manual){
   var note = document.getElementById('aboutNote');
   if (manual && note){ note.textContent = '正在检查…'; note.className = 'setnote'; }
+  /* 桌面版：页面是注入的（无 origin），WebView2 不给它加载远程脚本，
+     所以走 exe 自己的本地接口去查（Python 侧不受这个限制）。 */
+  var base = apiBase();
+  if (base){
+    try{
+      fetch(base + '/latest').then(function(r){ return r.json(); }).then(function(d){
+        applyUpdateInfo((d && d.latest) ? d.latest : null, manual);
+      }).catch(function(){ applyUpdateInfo(null, manual); });
+      return;
+    }catch(e){}
+  }
   var s = document.createElement('script');
   s.src = UPDATE_BASE + 'version.txt?t=' + Date.now();
   s.onload = function(){
