@@ -172,7 +172,7 @@ $ErrorActionPreference = "Stop"
 [void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType=WindowsRuntime]
 $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
 $xml.LoadXml(@"
-<toast duration="long"><visual><binding template="ToastGeneric"><text>__TITLE__</text><text>__BODY__</text></binding></visual></toast>
+<toast duration="long"><visual><binding template="ToastGeneric">__ICONIMG__<text>__TITLE__</text><text>__BODY__</text></binding></visual></toast>
 "@)
 $t = New-Object Windows.UI.Notifications.ToastNotification $xml
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("__APPID__").Show($t)
@@ -195,13 +195,39 @@ def _xml_escape(text):
             .replace('>', '&gt;').replace('"', '&quot;'))[:180]
 
 
+def toast_icon_uri():
+    """通知左侧的校徽图标：从页面里抠出那张内嵌 PNG，落到纯英文的临时目录，
+    返回 file:/// 形式（百分号编码，避免中文路径把 toast 的图片解析搞挂）。
+    取不到图标就返回空串，通知照发，只是没有图标。"""
+    try:
+        p = os.path.join(tempfile.gettempdir(), 'sqzy_toast_icon.png')
+        if not (os.path.exists(p) and os.path.getsize(p) > 200):
+            html = load_current_html() or ''
+            m = re.search(r'data:image/png;base64,([A-Za-z0-9+/=]+)', html)
+            if not m:
+                return ''
+            raw = base64.b64decode(m.group(1))
+            if len(raw) < 200 or raw[:8] != b'\x89PNG\r\n\x1a\n':
+                return ''
+            with open(p, 'wb') as fp:
+                fp.write(raw)
+        return 'file:///' + urllib.parse.quote(p.replace('\\', '/'), safe='/:')
+    except Exception as exc:
+        api_log('取通知图标失败 %r' % (exc,), 'warn')
+        return ''
+
+
 def notify_windows(title, body):
     """不阻塞地发一条 Windows 原生通知，失败返回 False"""
     if not sys.platform.startswith('win'):
         return False
     try:
         _ensure_appid()
+        icon = toast_icon_uri()
+        img = ('<image placement="appLogoOverride" hint-crop="circle" src="%s"/>'
+               % _xml_escape(icon)) if icon else ''
         ps = (_TOAST_PS
+              .replace('__ICONIMG__', img)
               .replace('__TITLE__', _xml_escape(title))
               .replace('__BODY__', _xml_escape(body))
               .replace('__APPID__', APP_TITLE.replace('"', '')))
