@@ -77,6 +77,7 @@ publish.sh 会把它复制成 index.html；仓库里只保留一份，避免重�
 | app.py | Windows 桌面版源码（pywebview + WebView2） |
 | publish.sh | 一键发布：先过全部自检，再生成 release/ 里的两个文件 |
 | set-update-url.sh | 给二次开发者用：改自动更新地址并重新打包 |
+| check_live.py | 发布之后核验线上：网页、版本号、两个下载链接跟本地是否一致 |
 | 自动更新使用说明.md | 自动更新的原理和日常操作 |
 | CHANGELOG.md | 每个版本改了什么 |
 
@@ -91,6 +92,7 @@ publish.sh 会把它复制成 index.html；仓库里只保留一份，避免重�
 | functest_page.py | 无头浏览器 + CDP **交互遍历**：悬停/钉住、设置保存、通知判定、更新弹窗、缩放、防调试… |
 | selftest_api.py | 桌面版本地接口自检：/ping /state /notify /latest /quit |
 | functest_app.py | 桌面外壳端到端：真的开一个窗口，验单实例、托盘、置顶、退出 |
+| check_live.py | 发布**之后**跑：核验线上网页 / version.txt / exe、apk 下载链接与本地一致 |
 
     python functest_app.py                        # 测源码
     python functest_app.py --exe 宿迁职业技术学院作息时间表.exe   # 测打包好的 exe
