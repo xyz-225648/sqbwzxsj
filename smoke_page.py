@@ -45,12 +45,18 @@ if not exe:
     sys.exit(0)
 
 
-def render(w, h):
+ANDROID_UA = ('Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) '
+              'Chrome/120.0.0.0 Mobile Safari/537.36')
+
+
+def render(w, h, android=False):
     prof = tempfile.mkdtemp(prefix='sqzy_smoke_')
     cmd = [exe, '--headless=new', '--disable-gpu', '--no-first-run',
            '--user-data-dir=' + prof, '--window-size=%d,%d' % (w, h),
            '--virtual-time-budget=6000', '--enable-logging=stderr', '--v=0',
            '--dump-dom', url]
+    if android:
+        cmd.insert(1, '--user-agent=' + ANDROID_UA)
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8',
                            errors='replace', timeout=120)
@@ -59,7 +65,7 @@ def render(w, h):
     return r.stdout or '', r.stderr or ''
 
 
-def check(label, dom, err, mobile=False):
+def check(label, dom, err, mobile=False, android=False):
     fail = []
     print('  [%s]' % label)
 
@@ -105,6 +111,15 @@ def check(label, dom, err, mobile=False):
     elif any(not x.strip() for x in ms):
         fail.append('有卡片的状态文字是空的 —— renderNow 没跑完')
 
+    if android:
+        marked = 'data-android="1"' in dom
+        rule = 'data-android="1"] #devBtn' in dom
+        print('    安卓标记 data-android=1:', marked, '| 隐藏规则存在:', rule)
+        if not marked:
+            fail.append('安卓 UA 下没有打上 data-android 标记')
+        if not rule:
+            fail.append('页面里没有「安卓隐藏 置顶/切换」的 CSS 规则')
+
     if mobile:
         blk = len(re.findall(r'class="vt-blk', body))
         print('    竖排时间轴节块: %d 个' % blk)
@@ -126,9 +141,11 @@ def check(label, dom, err, mobile=False):
 
 
 allfail = []
-for label, w, h, mob in (('横版 1400x1000', 1400, 1000, False), ('竖版 420x900', 420, 900, True)):
-    dom, err = render(w, h)
-    allfail += check(label, dom, err, mob)
+for label, w, h, mob, andr in (('横版 1400x1000', 1400, 1000, False, False),
+                              ('竖版 420x900', 420, 900, True, False),
+                              ('安卓 UA 430x900', 430, 900, True, True)):
+    dom, err = render(w, h, andr)
+    allfail += check(label, dom, err, mob, andr)
 
 print('  smoke: %s' % ('PASS' if not allfail else 'FAIL'))
 for x in allfail:
