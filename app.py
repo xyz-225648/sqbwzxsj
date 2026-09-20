@@ -159,7 +159,11 @@ def silent_update(window):
     if not html:
         return
     try:
-        window.load_html(with_api(html))
+        # 走 http 重新加载，保持同一个 origin，设置不会因为换页而丢
+        if _PORT[0]:
+            window.load_url('http://127.0.0.1:%d/?v=%d' % (_PORT[0], int(time.time())))
+        else:
+            window.load_html(with_api(html))
         api_log('已热替换到新版本 %s' % ver)
     except Exception as exc:
         api_log('热替换失败 %r' % (exc,), 'error')
@@ -297,6 +301,21 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
         # 直接导致「检查更新失败」和「通知发不出去」两次线上故障；
         # 而它挡住的只是「同机网页可能伪造一条通知」，收益远小于代价。
         # 真正的防护是：只监听 127.0.0.1 + 随机端口。
+        if u.path in ('/', '/index.html'):
+            # 页面走 http 打开，而不是 pywebview 的 html= 直塞：
+            # 直塞出来的文档 origin 是 opaque，localStorage 直接抛 SecurityError，
+            # 表现就是「设置改完不保存」。给它一个真实 origin 即可。
+            body = with_api(load_current_html()).encode('utf-8')
+            try:
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except Exception as exc:
+                api_log('首页回包失败 %r' % (exc,), 'warn')
+            return
         if u.path == '/ping':
             return self._reply({'ok': True, 'native': True, 'name': APP_TITLE})
         if u.path == '/quit':
@@ -329,7 +348,22 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
         return self._reply({'ok': False, 'err': 'unknown'})
 
 
+def port_free(p):
+    try:
+        sk = socket.socket()
+        sk.bind(('127.0.0.1', p))
+        sk.close()
+        return True
+    except Exception:
+        return False
+
+
 def pick_free_port():
+    """端口优先固定：页面改用 http://127.0.0.1:端口 打开，而端口是 origin 的一部分，
+    端口一变 localStorage（也就是「设置」）就相当于换了一份，设置又会「丢」。"""
+    for p in (51900, 51901, 51902, 51903, 51904):
+        if port_free(p):
+            return p
     try:
         sk = socket.socket()
         sk.bind(('127.0.0.1', 0))
@@ -419,6 +453,27 @@ def open_in_browser(html, quiet=False):
 
 
 # ==================== 启动 ====================
+_PROFILE_LOCK = []
+
+
+def acquire_profile_lock():
+    """WebView2 的 user data 目录同一时刻只能被一个实例占用。
+    拿到锁就用它落盘（设置、缩放都能记住）；拿不到就退回私有模式，
+    免得第二个窗口因为抢目录而打不开。"""
+    try:
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        h = k32.CreateMutexW(None, False, 'Local\\sqzy_timetable_webview_profile')
+        if not h:
+            return False
+        if k32.GetLastError() == 183:          # ERROR_ALREADY_EXISTS
+            return False
+        _PROFILE_LOCK.append(h)                # 留住句柄，别让互斥体提前释放
+        return True
+    except Exception:
+        return False
+
+
 def run_window(html):
     port = pick_free_port()
     if port:
@@ -451,20 +506,25 @@ def run_window(html):
         except Exception as exc:
             api_log('助手进程启动失败 %r' % (exc,), 'error')
 
-    window = webview.create_window(
-        APP_TITLE,
-        html=with_api(html),
-        width=1120,
-        height=760,
-        min_size=(340, 480),
-        resizable=True,
-        text_select=False,
-        confirm_close=False,
-        background_color='#f1f5f9',
-    )
+    opts = dict(width=1120, height=760, min_size=(340, 480), resizable=True,
+                text_select=False, confirm_close=False, background_color='#f1f5f9')
+    if port:
+        # 有助手进程就让它把页面用 http 发出来（真实 origin → localStorage 可用）
+        window = webview.create_window(APP_TITLE, url='http://127.0.0.1:%d/' % port, **opts)
+    else:
+        # 助手起不来时退回直塞，功能都在，只是设置不落盘
+        window = webview.create_window(APP_TITLE, html=with_api(html), **opts)
     if UPDATE_BASE:
         threading.Thread(target=silent_update, args=(window,), daemon=True).start()
-    webview.start()
+    # pywebview 默认 private_mode=True —— 文档原话「cookies and local storage are not
+    # preserved」，而且窗口一关就把 profile 整个删掉。设置面板「改完不生效、下次打开
+    # 又回到默认」就是这个原因（实测）。改成落盘 + 指定目录即可。
+    if acquire_profile_lock():
+        api_log('启用持久化配置目录，设置类改动会被记住')
+        webview.start(private_mode=False, storage_path=os.path.join(cache_dir(), 'webview'))
+    else:
+        api_log('已有窗口在用配置目录，本次退回不落盘模式', 'warn')
+        webview.start()
     stop_helper()
 
 
