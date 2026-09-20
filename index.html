@@ -64,13 +64,6 @@
   .setbtn{font:inherit;font-size:12px;font-weight:600;color:#e0e7ff;background:rgba(255,255,255,.12);
           border:1px solid rgba(255,255,255,.28);border-radius:9px;padding:7px 12px;cursor:pointer;white-space:nowrap}
   .setbtn:hover{background:rgba(255,255,255,.2)}
-  .pinbtn{display:flex;align-items:center;gap:5px;font:inherit;font-size:12px;font-weight:600;
-          color:#94a3b8;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.22);
-          border-radius:9px;padding:6px 10px;cursor:pointer;white-space:nowrap;transition:all .15s}
-  .pinbtn svg{width:15px;height:15px;display:block}
-  .pinbtn:hover{background:rgba(255,255,255,.2)}
-  .pinbtn.on{color:#0f172a;background:#fbbf24;border-color:#f59e0b}
-  .pinbtn.on svg{transform:rotate(-32deg)}
   .sheet{position:fixed;inset:0;z-index:9998;display:none;background:rgba(15,23,42,.55)}
   .sheet.on{display:block}
   .sheet-card{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
@@ -1158,14 +1151,6 @@ function inPageToast(title, body){
   setTimeout(function(){ el.classList.add('out'); }, 4200);
   setTimeout(function(){ if (el.parentNode) el.parentNode.removeChild(el); }, 5000);
 }
-function applyOnTop(){
-  var api = pywvApi();
-  if (api && api.set_on_top){ try{ api.set_on_top(!!notifyCfg.onTop); }catch(e){} }
-  var base = apiBase();
-  if (base){
-    try{ fetch(base + '/ontop?on=' + (notifyCfg.onTop ? 1 : 0)).catch(function(){}); }catch(e){}
-  }
-}
 function platformText(){
   var ua = navigator.userAgent || '';
   if (window.SQZY_ANDROID && window.SQZY_ANDROID.platform) return 'Android 手机版';
@@ -1306,18 +1291,9 @@ function checkAppUpdate(manual){
   };
   document.head.appendChild(s);
 }
-function refreshPin(){
-  var pin = document.getElementById('pinBtn');
-  if (!pin) return;
-  pin.classList.toggle('on', !!notifyCfg.onTop);
-  pin.title = notifyCfg.onTop ? '已保持窗口最前（点击取消）' : '保持窗口最前（点击开启）';
-  var sp = pin.querySelector('span');
-  if (sp) sp.textContent = notifyCfg.onTop ? '保持最前' : '置顶';
-}
 function refreshSetUI(){
-  refreshPin();
-  var ids = ['setOnTop','setOn','setBefore','setNext','setStart','setEnd'];
-  var vals = [notifyCfg.onTop, notifyCfg.on, notifyCfg.before, notifyCfg.next, notifyCfg.start, notifyCfg.end];
+  var ids = ['setOn','setBefore','setNext','setStart','setEnd'];
+  var vals = [notifyCfg.on, notifyCfg.before, notifyCfg.next, notifyCfg.start, notifyCfg.end];
   ids.forEach(function(id, i){ var e = document.getElementById(id); if (e) e.checked = !!vals[i]; });
   var mn = document.getElementById('setMin'); if (mn) mn.value = notifyCfg.min;
   var host = document.getElementById('setTracks');
@@ -1365,20 +1341,6 @@ function initSettings(){
     setb.type = 'button'; setb.className = 'setbtn'; setb.id = 'setBtn'; setb.textContent = '设置';
     devbox.insertBefore(setb, devbox.firstChild);
 
-    /* 钉子按钮：一眼看出开没开（亮黄=保持最前，灰=不保持） */
-    var pin = document.createElement('button');
-    pin.type = 'button'; pin.className = 'pinbtn'; pin.id = 'pinBtn';
-    pin.title = '保持窗口最前';
-    pin.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
-      + '<path d="M14 4v6l3 3v2h-4.2l-.8 5-.8-5H7v-2l3-3V4h-1V2h6v2h-1z"/></svg><span></span>';
-    devbox.insertBefore(pin, devbox.firstChild);
-    pin.addEventListener('click', function(){
-      notifyCfg.onTop = !notifyCfg.onTop;
-      saveCfg();
-      refreshPin();
-      applyOnTop();
-      refreshSetUI();
-    });
   }
   var sheet = document.createElement('div');
   sheet.className = 'sheet'; sheet.id = 'setSheet';
@@ -1388,8 +1350,6 @@ function initSettings(){
   sheet.innerHTML =
     '<div class="sheet-card">' +
       '<div class="sheet-head"><b>设置</b><span class="sheet-x" id="setClose">✕</span></div>' +
-      '<div class="setsec">窗口</div>' +
-      '<div class="setrow"><label><input type="checkbox" id="setOnTop">窗口钉在最上层（桌面版生效）</label></div>' +
       '<div class="setsec">桌面通知</div>' +
       '<div class="setrow"><label><input type="checkbox" id="setOn">开启通知（Windows 系统通知）</label></div>' +
       '<div class="setsec">提醒哪些学院</div>' +
@@ -1429,11 +1389,10 @@ function initSettings(){
       if (isNum){ var v = parseInt(e.value, 10); notifyCfg[key] = (v >= 1 && v <= 30) ? v : 5; }
       else notifyCfg[key] = e.checked;
       saveCfg(); refreshSetUI();
-      if (key === 'onTop') applyOnTop();
       if (key === 'on' && notifyCfg.on) checkNotify();
     });
   }
-  bind('setOnTop','onTop'); bind('setOn','on'); bind('setBefore','before');
+  bind('setOn','on'); bind('setBefore','before');
   bind('setNext','next'); bind('setStart','start'); bind('setEnd','end');
   bind('setMin','min', true);
 
@@ -1472,17 +1431,9 @@ function initSettings(){
   function markReady(){
     if (pywvReady) return;
     pywvReady = true;
-    applyOnTop();
     var n = document.getElementById('setNote');
     if (n) n.textContent = '桌面版：走 Windows 系统通知中心，可在「设置 → 系统 → 通知」里管理。';
   }
-  (function syncTop(){
-    var base = apiBase();
-    if (!base) return;
-    fetch(base + '/state').then(function(r){ return r.json(); }).then(function(d){
-      if (d && typeof d.onTop === 'boolean'){ notifyCfg.onTop = d.onTop; refreshPin(); refreshSetUI(); }
-    }).catch(function(){});
-  })();
   renderAbout();
   setTimeout(function(){ checkAppUpdate(false); }, 1500);
   if (pywvApi() || apiBase()) markReady();
