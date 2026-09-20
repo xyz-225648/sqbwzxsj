@@ -39,7 +39,10 @@ try:
         rc = 1
     else:
         st, body = call('/')
-        ok_page = ('id="nowBar"' in body) and ("APP_VERSION = 'v" in body)
+        injected = 'window.SQZY_API="http://127.0.0.1:' in body
+        ok_page = ('id="nowBar"' in body) and ("APP_VERSION = 'v" in body) and injected
+        if not injected:
+            print('    ✗ 页面里没有注入 window.SQZY_API（页面会以为自己在浏览器里，通知会失效）')
         print('  GET /      HTTP %d  %d 字节  页面自检 %s  ← exe 现在用 http 把页面发给窗口'
               % (st, len(body.encode('utf-8')), 'OK' if ok_page else '失败'))
         if not ok_page:
