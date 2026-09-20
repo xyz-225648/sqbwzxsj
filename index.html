@@ -1095,7 +1095,7 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2026.9.21';
+var APP_VERSION = 'v2026.9.22';
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 var latestInfo = null;
@@ -1139,7 +1139,10 @@ function sendNotify(title, body){
     }catch(e){}
   }
   if (window.Notification && Notification.permission === 'granted'){
-    try{ new Notification(title, { body: body }); return 'web'; }catch(e){}
+    /* 带上校徽图标（就是页头那枚内嵌 PNG，不用额外文件） */
+    var ic = '';
+    try { var im = document.querySelector('.brand'); if (im) ic = im.src; }catch(e){}
+    try{ new Notification(title, { body: body, icon: ic || undefined }); return 'web'; }catch(e){}
   }
   return null;
 }
