@@ -93,7 +93,6 @@
            border-radius:9px;padding:9px 14px;cursor:pointer;width:100%;margin-top:8px}
   .settest:hover{background:#1d4ed8}
   .setnote{font-size:12px;color:#94a3b8;line-height:1.7;margin-top:9px}
-  .setnote.hi{color:#b45309;font-weight:600}
   .sysToast{position:fixed;right:16px;bottom:16px;z-index:9999;max-width:330px;background:#0f172a;color:#fff;
             border-radius:12px;padding:12px 15px;box-shadow:0 14px 40px rgba(15,23,42,.4)}
   .sysToast b{display:block;font-size:13px;margin-bottom:3px}
@@ -1100,11 +1099,7 @@ function bindToTop(){
 }
 
 /* ===================== 设置面板 & 通知 ===================== */
-var APP_VERSION = 'v2026.9.20';      /* 每次发布改这里 */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var NOTIFY_VER_KEY = 'sqzy-seen-ver';
-var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
-var latestInfo = null;
 var notifyCfg = { on:true, onTop:true, before:true, next:true, start:false, end:false, min:5,
                   tracks:[true,true,true,true] };
 var firedKeys = {};
@@ -1159,82 +1154,6 @@ function applyOnTop(){
   if (base){
     try{ fetch(base + '/ontop?on=' + (notifyCfg.onTop ? 1 : 0)).catch(function(){}); }catch(e){}
   }
-}
-function platformText(){
-  if (apiBase() || pywvApi()) return 'Windows 桌面版';
-  var ua = navigator.userAgent || '';
-  if (/Android/i.test(ua)) return 'Android 手机版';
-  if (/iPhone|iPad|iPod/i.test(ua)) return 'iOS 网页版';
-  return '浏览器版';
-}
-function majorOf(v){ var m = /^v?(\d+\.\d+)/.exec(v || ''); return m ? m[1] : (v || ''); }
-function renderAbout(){
-  var el = document.getElementById('aboutVer');
-  if (el) el.textContent = '当前版本：' + APP_VERSION + ' | ' + platformText();
-  var note = document.getElementById('aboutNote');
-  if (note && latestInfo && latestInfo.v){
-    if (latestInfo.v !== APP_VERSION){
-      note.innerHTML = '发现新版本 <b>' + latestInfo.v + '</b>（' + (latestInfo.t || '') + '）';
-      note.className = 'setnote hi';
-    } else {
-      note.textContent = '已是最新版本（' + (latestInfo.t || '') + '）';
-      note.className = 'setnote';
-    }
-  }
-}
-function showUpdateDialog(info){
-  var old = document.getElementById('upDlg');
-  if (old && old.parentNode) old.parentNode.removeChild(old);
-  var apkUrl = 'https://gitee.com/xyz-225648/sqbwzxsj/releases/download/v1.0/'
-             + encodeURIComponent('宿迁职业技术学院作息时间表.apk');
-  var d = document.createElement('div');
-  d.className = 'sheet on'; d.id = 'upDlg';
-  d.innerHTML = '<div class="sheet-card" style="max-width:410px">'
-    + '<div class="sheet-head"><b>发现新版本</b><span class="sheet-x" id="upClose">✕</span></div>'
-    + '<div class="setrow" style="display:block;line-height:1.95">'
-    + '当前版本：' + APP_VERSION + '<br>最新版本：<b style="color:#1d4ed8">' + info.v + '</b>'
-    + (info.t ? '<br>发布时间：' + info.t : '') + '</div>'
-    + '<div class="setnote">电脑版：网页内容会自动更新，无需操作。<br>'
-    + '手机版：点下面按钮下载新版 apk，覆盖安装即可（不会丢数据）。</div>'
-    + '<a class="settest" style="display:block;text-align:center;text-decoration:none;box-sizing:border-box" '
-    + 'href="' + apkUrl + '" target="_blank" rel="noopener">下载安卓新版</a>'
-    + '<button class="settest" id="upLater" type="button" style="background:#e2e8f0;color:#0f172a">稍后再说</button>'
-    + '</div>';
-  document.body.appendChild(d);
-  function close(){ if (d.parentNode) d.parentNode.removeChild(d); }
-  d.querySelector('#upClose').addEventListener('click', close);
-  d.querySelector('#upLater').addEventListener('click', close);
-  d.addEventListener('click', function(e){ if (e.target === d) close(); });
-}
-function applyUpdateInfo(info, manual){
-  latestInfo = info;
-  renderAbout();
-  if (!info || !info.v){ if (manual) alert('检查更新失败，请检查网络后重试。'); return; }
-  if (info.v === APP_VERSION){ if (manual) alert('已是最新版本：' + APP_VERSION); return; }
-  if (majorOf(info.v) !== majorOf(APP_VERSION)){
-    var seen = safeGet(NOTIFY_VER_KEY);
-    if (manual || seen !== info.v){
-      safeSet(NOTIFY_VER_KEY, info.v);
-      showUpdateDialog(info);
-    }
-  } else if (manual){
-    alert('有小幅更新：' + info.v + '（' + (info.t || '') + '）
-网页内容下次打开会自动更新。');
-  }
-}
-function checkAppUpdate(manual){
-  var n = document.getElementById('aboutNote');
-  if (manual && n){ n.textContent = '正在检查…'; n.className = 'setnote'; }
-  try{
-    var s = document.createElement('script');
-    s.src = UPDATE_BASE + 'version.txt?t=' + Date.now();
-    s.onload = function(){
-      applyUpdateInfo(window.SQZY_LATEST || null, manual);
-      if (s.parentNode) s.parentNode.removeChild(s);
-    };
-    s.onerror = function(){ applyUpdateInfo(null, manual); if (s.parentNode) s.parentNode.removeChild(s); };
-    document.head.appendChild(s);
-  }catch(e){ if (manual) alert('检查更新失败：' + e.message); }
 }
 function refreshPin(){
   var pin = document.getElementById('pinBtn');
@@ -1332,15 +1251,6 @@ function initSettings(){
       '<div class="setrow"><label><input type="checkbox" id="setEnd">下课时提醒</label></div>' +
       '<button class="settest" id="setTest" type="button">发一条测试通知</button>' +
       '<div class="setnote" id="setNote"></div>' +
-      '<div class="setsec">关于</div>' +
-      '<div class="setrow" style="align-items:flex-start;gap:10px">' +
-        '<div style="flex:1;min-width:0">' +
-          '<b style="font-size:13px">宿迁职业技术学院作息时间表</b>' +
-          '<div class="setnote" id="aboutVer" style="margin-top:3px"></div>' +
-        '</div>' +
-        '<button class="settest" id="aboutCheck" type="button" style="width:auto;margin:0;white-space:nowrap">检查更新</button>' +
-      '</div>' +
-      '<div class="setnote" id="aboutNote"></div>' +
     '</div>';
   document.body.appendChild(sheet);
 
@@ -1384,7 +1294,6 @@ function initSettings(){
   document.addEventListener('keydown', function(e){
     if (e.key === 'Escape' && sheet.classList.contains('on')) sheet.classList.remove('on');
   });
-  document.getElementById('aboutCheck').addEventListener('click', function(){ checkAppUpdate(true); });
   document.getElementById('setTest').addEventListener('click', function(){
     var d = new Date(), m = d.getHours() * 60 + d.getMinutes();
     var i = notifyCfg.tracks.indexOf(true); if (i < 0) i = 0;
@@ -1412,8 +1321,6 @@ function initSettings(){
       if (d && typeof d.onTop === 'boolean'){ notifyCfg.onTop = d.onTop; refreshPin(); refreshSetUI(); }
     }).catch(function(){});
   })();
-  renderAbout();
-  setTimeout(function(){ checkAppUpdate(false); }, 1500);
   if (pywvApi() || apiBase()) markReady();
   /* pywebview 注入 api 的时机不一定早于本页脚本，主动轮询兜底 */
   var bridgeTries = 0;
