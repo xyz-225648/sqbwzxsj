@@ -1095,9 +1095,10 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2026.9.20';
+var APP_VERSION = 'v2026.9.21';
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
+var latestInfo = null;
 var notifyCfg = { on:true, onTop:true, before:true, next:true, start:false, end:false, min:5,
                   tracks:[true,true,true,true] };
 var firedKeys = {};
@@ -1525,22 +1526,31 @@ function relayout(){
 }
 
 /* ===================== 启动 ===================== */
-renderGantt();
-renderCards();
-initDevice();
-bindNameJump();
-bindGuide();
-renderVertical();
-bindVertical();
-bindToTop();
-bindNoCopy();
-initZoom();
-bindNowBar();
-initSettings();
-bindProtect();
-renderNow();
-setInterval(renderNow, 20000);
-document.addEventListener('visibilitychange', function(){ if (!document.hidden) renderNow(); });
+/* 每一步单独兜底：整页共用一个 script 作用域，任何一步抛异常都会
+   让它后面的步骤（尤其是 renderNow「当前状态 / 还有多久下课」）全部不执行。
+   这里隔离失败，并把错误丢到控制台，避免一个局部问题拖垮整页。 */
+function bootStep(name, fn){
+  try { fn(); }
+  catch(e){
+    if (window.console && console.error) console.error('[启动失败] ' + name, e);
+  }
+}
+bootStep('甘特总览', renderGantt);
+bootStep('分方向时间轴', renderCards);
+bootStep('设备识别', initDevice);
+bootStep('学院名跳转', bindNameJump);
+bootStep('悬停预览轴', bindGuide);
+bootStep('竖版时间轴', renderVertical);
+bootStep('竖版交互', bindVertical);
+bootStep('回到顶部', bindToTop);
+bootStep('禁复制', bindNoCopy);
+bootStep('缩放', initZoom);
+bootStep('当前状态条交互', bindNowBar);
+bootStep('设置面板', initSettings);
+bootStep('防调试', bindProtect);
+bootStep('当前状态', renderNow);
+setInterval(function(){ bootStep('当前状态', renderNow); }, 20000);
+document.addEventListener('visibilitychange', function(){ if (!document.hidden) bootStep('当前状态', renderNow); });
 
 /* 调试/外部调用入口 */
 window.SQTC = { showGuide:showGuide, hideGuide:hideGuide, pinAt:pinAt, unpin:unpin, applyDevice:applyDevice, renderNow:renderNow, relayout:relayout, vtPinAt:vtPinAt, vtUnpin:vtUnpin };
