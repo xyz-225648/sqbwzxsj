@@ -376,6 +376,10 @@ def pick_free_port():
 
 def run_api_server(port):
     """助手进程里跑这个：独立进程不受 pywebview 消息循环影响"""
+    # 助手自己也要知道自己在哪个端口：它负责把页面用 http 发给窗口，
+    # 而页面靠注入的 window.SQZY_API 才能认出「这是桌面版」并走系统通知。
+    # 不设这个值 → 注入被跳过 → 页面以为自己在浏览器里，通知全落到页面内提示。
+    _PORT[0] = port
     try:
         srv = socketserver.ThreadingTCPServer(('127.0.0.1', port), _ApiHandler)
         srv.daemon_threads = True
