@@ -1250,11 +1250,11 @@ function applyUpdateInfo(info, manual){
   latestInfo = info;
   renderAbout();
   if (!info || !info.v){
-    if (manual) alert('检查更新失败，请检查网络后重试。');
+    if (manual) inPageToast('检查更新失败', '请检查网络后重试（也可能刚发布，稍等一两分钟）');
     return;
   }
   if (info.v === APP_VERSION){
-    if (manual) alert('已是最新版本：' + APP_VERSION);
+    if (manual) inPageToast('已是最新版本', '当前版本 ' + APP_VERSION);
     return;
   }
   if (majorOf(info.v) !== majorOf(APP_VERSION)){
@@ -1263,7 +1263,7 @@ function applyUpdateInfo(info, manual){
       showUpdateDialog(info);
     }
   } else if (manual){
-    alert('有小幅更新：' + info.v + '（' + (info.t || '') + '）');
+    inPageToast('有小幅更新', info.v + '（' + (info.t || '') + '）下次打开会自动更新');
   }
 }
 function checkAppUpdate(manual){
