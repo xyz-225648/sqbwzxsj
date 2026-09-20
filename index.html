@@ -67,11 +67,16 @@ if (/Android/i.test(navigator.userAgent || '')) document.documentElement.setAttr
   .setbtn{font:inherit;font-size:12px;font-weight:600;color:#e0e7ff;background:rgba(255,255,255,.12);
           border:1px solid rgba(255,255,255,.28);border-radius:9px;padding:7px 12px;cursor:pointer;white-space:nowrap}
   .setbtn:hover{background:rgba(255,255,255,.2)}
-  .sheet{position:fixed;inset:0;z-index:9998;display:none;background:rgba(15,23,42,.55)}
+  .sheet{position:fixed;inset:0;z-index:9998;display:none;background:rgba(15,23,42,.55);
+         overscroll-behavior:contain}
   .sheet.on{display:block}
   .sheet-card{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
               width:min(430px,calc(100vw - 28px));max-height:calc(100vh - 40px);overflow:auto;
+              overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
               background:#fff;border-radius:15px;box-shadow:0 20px 60px rgba(15,23,42,.35);padding:16px 18px 18px}
+  /* 弹层打开时把底下那一页按住：否则在设置里滑动，时间表会跟着一起滚 */
+  html.sheet-lock{overflow:hidden}
+  html.sheet-lock body{position:fixed;left:0;right:0;width:100%}
   /* 滚动条不显示，但照样能滚：设置面板右侧那条灰条、手机版横滑时间轴的长条都不再出现 */
   *{scrollbar-width:none;-ms-overflow-style:none}
   *::-webkit-scrollbar{width:0;height:0;display:none}
@@ -1107,7 +1112,7 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2026.9.28';
+var APP_VERSION = 'v2026.9.29';
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 var latestInfo = null;
@@ -1208,15 +1213,52 @@ function renderAbout(){
     note.className = 'setnote hi';
   }
 }
+/* ---- 弹层打开时按住底下的页面 ----
+   触摸端从弹层里往外拖、或者滚轮落在遮罩上，滚动会「穿透」到后面的时间表。
+   锁法用 position:fixed + top:-Y 而不是简单 overflow:hidden：
+   后者会让页面瞬间跳回顶部，看着更糟。 */
+var sheetLockY = 0, sheetLockN = 0;
+function sheetLock(on){
+  var html = document.documentElement, body = document.body;
+  if (on){
+    if (!sheetLockN){
+      sheetLockY = window.pageYOffset || html.scrollTop || body.scrollTop || 0;
+      body.style.top = (-sheetLockY) + 'px';
+    }
+    sheetLockN++;
+    html.classList.add('sheet-lock');
+  } else {
+    sheetLockN = Math.max(0, sheetLockN - 1);
+    if (!sheetLockN){
+      html.classList.remove('sheet-lock');
+      body.style.top = '';
+      try{ window.scrollTo(0, sheetLockY); }catch(e){}
+    }
+  }
+}
+function sheetOpen(el){
+  if (!el) return;
+  el.classList.add('on');
+  sheetLock(true);
+}
+function sheetClose(el){
+  if (!el) return;
+  if (el.classList.contains('on')) sheetLock(false);
+  el.classList.remove('on');
+}
 function closeDialog(id){
   var d = document.getElementById(id);
-  if (d && d.parentNode) d.parentNode.removeChild(d);
+  if (d && d.parentNode){
+    if (d.classList.contains('on')) sheetLock(false);
+    d.parentNode.removeChild(d);
+  }
 }
 function showUpdateDialog(info){
   closeDialog('upDlg');
   var wrap = document.createElement('div');
-  wrap.className = 'sheet on';
+  wrap.className = 'sheet';
   wrap.id = 'upDlg';
+  sheetOpen(wrap);
   var card = document.createElement('div');
   card.className = 'sheet-card';
   card.style.maxWidth = '410px';
@@ -1482,11 +1524,11 @@ function initSettings(){
     saveCfg(); refreshSetUI();
   });
 
-  document.getElementById('setBtn').addEventListener('click', function(){ sheet.classList.add('on'); });
-  document.getElementById('setClose').addEventListener('click', function(){ sheet.classList.remove('on'); });
-  sheet.addEventListener('click', function(e){ if (e.target === sheet) sheet.classList.remove('on'); });
+  document.getElementById('setBtn').addEventListener('click', function(){ sheetOpen(sheet); });
+  document.getElementById('setClose').addEventListener('click', function(){ sheetClose(sheet); });
+  sheet.addEventListener('click', function(e){ if (e.target === sheet) sheetClose(sheet); });
   document.addEventListener('keydown', function(e){
-    if (e.key === 'Escape' && sheet.classList.contains('on')) sheet.classList.remove('on');
+    if (e.key === 'Escape' && sheet.classList.contains('on')) sheetClose(sheet);
   });
   document.getElementById('aboutCheck').addEventListener('click', function(){ checkAppUpdate(true); });
   document.getElementById('setTest').addEventListener('click', function(){
