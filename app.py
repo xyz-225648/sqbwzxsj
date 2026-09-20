@@ -64,9 +64,11 @@ def read_text(path):
 
 
 def write_text(path, text):
+    """落盘必须按字节写（newline=''）：文本模式在 Windows 上会把 \n 自动转成 \r\n，
+    缓存下来的页面就跟仓库里发布的那一份不一样了（实测差了一千多个字节）。"""
     try:
         tmp = path + '.tmp'
-        with open(tmp, 'w', encoding='utf-8') as f:
+        with open(tmp, 'w', encoding='utf-8', newline='') as f:
             f.write(text)
         os.replace(tmp, path)
         return True
