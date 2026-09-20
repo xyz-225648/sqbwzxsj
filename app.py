@@ -316,6 +316,21 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
             except Exception as exc:
                 api_log('首页回包失败 %r' % (exc,), 'warn')
             return
+        if u.path == '/state':
+            # 窗口状态信箱：网页在这里读/写「置顶、关闭方式、恢复显示」
+            if any(k in q for k in ('top', 'close', 'show')):
+                kw = {}
+                if 'top' in q:
+                    kw['always_on_top'] = q['top'][0] not in ('0', 'false', 'off', '')
+                if 'close' in q:
+                    kw['close_mode'] = q['close'][0]
+                if 'show' in q:
+                    kw['show'] = int(time.time() * 1000)
+                st = write_win_state(**kw)
+                api_log('窗口状态更新 -> %r' % (st,))
+            else:
+                st = read_win_state()
+            return self._reply({'ok': True, 'state': st})
         if u.path == '/ping':
             return self._reply({'ok': True, 'native': True, 'name': APP_TITLE})
         if u.path == '/quit':
@@ -478,6 +493,266 @@ def acquire_profile_lock():
         return False
 
 
+# ==================== 窗口行为：托盘 / 关闭方式 / 置顶 ====================
+# 这几件事只有主进程能做（窗口在它手里），但网页只会跟助手进程说话，
+# 所以约定用一个状态文件当"信箱"：
+#   网页 → 助手 : /state?top=1&close=tray&show=1  （助手写文件）
+#   主进程       : 每 0.4 秒读一次文件，发现变化就应用到窗口上
+# 好处是两边都不用跨进程调用，谁也不阻塞谁。
+WIN_DEFAULTS = {'always_on_top': False, 'close_mode': 'tray', 'show': 0}
+_UI = {'form': None, 'tray': None, 'icon': None, 'exiting': False}
+
+
+def win_state_path():
+    return os.path.join(cache_dir(), 'win_state.json')
+
+
+def read_win_state():
+    o = dict(WIN_DEFAULTS)
+    try:
+        raw = read_text(win_state_path())
+        if raw:
+            j = json.loads(raw)
+            if isinstance(j, dict):
+                for k in WIN_DEFAULTS:
+                    if k in j:
+                        o[k] = j[k]
+    except Exception:
+        pass
+    o['always_on_top'] = bool(o['always_on_top'])
+    if o['close_mode'] not in ('tray', 'exit'):
+        o['close_mode'] = 'tray'
+    try:
+        o['show'] = int(o['show'])
+    except Exception:
+        o['show'] = 0
+    return o
+
+
+def write_win_state(**kw):
+    o = read_win_state()
+    o.update(kw)
+    try:
+        tmp = win_state_path() + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as fp:
+            json.dump(o, fp, ensure_ascii=False)
+        os.replace(tmp, win_state_path())
+    except Exception as exc:
+        api_log('写窗口状态失败 %r' % (exc,), 'warn')
+    return o
+
+
+def win_main_form():
+    try:
+        from webview.platforms.winforms import BrowserView
+        views = list((getattr(BrowserView, 'instances', {}) or {}).values())
+        return views[0] if views else None
+    except Exception:
+        return None
+
+
+def ui_call(fn):
+    """把活派回 UI 线程：WinForms 的控件只能在 UI 线程上碰"""
+    try:
+        from System import Action
+        form = _UI.get('form')
+        if form is None:
+            return False
+        form.BeginInvoke(Action(fn))
+        return True
+    except Exception as exc:
+        api_log('派回 UI 线程失败 %r' % (exc,), 'warn')
+        return False
+
+
+def _tray_show(sender=None, e=None):
+    win_show()
+
+
+def _tray_quit(sender=None, e=None):
+    win_quit()
+
+
+def ensure_tray():
+    """建托盘图标（必须在 UI 线程上调用）"""
+    if _UI.get('tray') is not None:
+        return
+    import clr
+    clr.AddReference('System.Windows.Forms')
+    clr.AddReference('System.Drawing')
+    from System.Windows.Forms import (NotifyIcon, ContextMenuStrip, ToolStripMenuItem,
+                                      Application, ToolTipIcon)
+    from System.Drawing import Icon
+    ico = None
+    try:
+        ico = Icon.ExtractAssociatedIcon(Application.ExecutablePath)
+    except Exception:
+        pass
+    tray = NotifyIcon()
+    try:
+        if ico is not None:
+            tray.Icon = ico
+        tray.Text = APP_TITLE
+    except Exception:
+        pass
+    menu = ContextMenuStrip()
+    mi_show = ToolStripMenuItem('显示主界面')
+    mi_show.Click += _tray_show
+    mi_quit = ToolStripMenuItem('退出')
+    mi_quit.Click += _tray_quit
+    menu.Items.Add(mi_show)
+    menu.Items.Add(mi_quit)
+    try:
+        tray.ContextMenuStrip = menu
+        tray.MouseDoubleClick += _tray_show
+        tray.Visible = True
+        tray.ShowBalloonTip(1200, APP_TITLE, '已隐藏到托盘，双击图标可恢复', ToolTipIcon.Info)
+    except Exception as exc:
+        api_log('托盘图标设置失败 %r' % (exc,), 'warn')
+    _UI['tray'] = tray
+    _UI['icon'] = ico
+    api_log('托盘图标已就绪')
+
+
+def _do_hide():
+    form = _UI.get('form')
+    if form is None:
+        return
+    try:
+        ensure_tray()
+        form.Hide()
+        api_log('窗口已隐藏到托盘')
+    except Exception as exc:
+        api_log('隐藏到托盘失败 %r' % (exc,), 'warn')
+
+
+def _do_show():
+    form = _UI.get('form')
+    if form is None:
+        return
+    try:
+        from System.Windows.Forms import FormWindowState
+        form.Show()
+        form.WindowState = FormWindowState.Normal
+        form.Activate()
+        api_log('窗口已恢复显示')
+    except Exception as exc:
+        api_log('恢复窗口失败 %r' % (exc,), 'warn')
+
+
+def win_hide():
+    ui_call(_do_hide)
+
+
+def win_show():
+    ui_call(_do_show)
+
+
+def _do_quit():
+    _UI['exiting'] = True
+    try:
+        tray = _UI.get('tray')
+        if tray is not None:
+            tray.Visible = False
+            tray.Dispose()
+            _UI['tray'] = None
+    except Exception:
+        pass
+    try:
+        form = _UI.get('form')
+        if form is not None:
+            form.Close()
+    except Exception as exc:
+        api_log('退出失败 %r' % (exc,), 'warn')
+
+
+def win_quit():
+    ui_call(_do_quit)
+
+
+def _on_form_closing(sender, e):
+    """点右上角 ✕ 时的分流：隐藏到托盘 / 直接退出（网页里可切）"""
+    try:
+        if _UI.get('exiting'):
+            return
+        mode = read_win_state()['close_mode']
+        if mode == 'tray':
+            e.Cancel = True
+            api_log('关闭按钮 → 隐藏到托盘')
+            _do_hide()
+        else:
+            _UI['exiting'] = True
+            api_log('关闭按钮 → 直接退出')
+    except Exception as exc:
+        api_log('关闭处理失败 %r' % (exc,), 'warn')
+
+
+def _on_form_resize(sender, e):
+    try:
+        from System.Windows.Forms import FormWindowState
+        form = _UI.get('form')
+        if form is not None and form.WindowState == FormWindowState.Minimized:
+            form.WindowState = FormWindowState.Normal
+            api_log('最小化 → 隐藏到托盘')
+            _do_hide()
+    except Exception as exc:
+        api_log('最小化处理失败 %r' % (exc,), 'warn')
+
+
+def _install_ui():
+    """在 UI 线程上接管窗口（由 BeginInvoke 调进来）"""
+    try:
+        form = win_main_form()
+        if form is None:
+            api_log('拿不到主窗口，托盘/关闭接管跳过', 'warn')
+            return
+        _UI['form'] = form
+        form.FormClosing += _on_form_closing
+        form.Resize += _on_form_resize
+        api_log('已接管窗口关闭/最小化（关闭方式：%s）' % read_win_state()['close_mode'])
+    except Exception as exc:
+        api_log('窗口接管失败 %r' % (exc,), 'error')
+
+
+def install_window_behavior():
+    def worker():
+        for _ in range(150):
+            form = win_main_form()
+            if form is not None:
+                try:
+                    from System import Action
+                    form.BeginInvoke(Action(_install_ui))
+                    return
+                except Exception:
+                    pass
+            time.sleep(0.2)
+        api_log('等待主窗口超时，托盘未接管', 'warn')
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def win_state_poller():
+    """每 0.4 秒对一次状态文件：置顶 / 恢复显示，一律以文件为准"""
+    applied_top = None
+    applied_show = read_win_state().get('show', 0)
+    while True:
+        time.sleep(0.4)
+        try:
+            if _UI.get('form') is None:
+                continue
+            st = read_win_state()
+            if applied_top is None or st['always_on_top'] != applied_top:
+                v = st['always_on_top']
+                ui_call(lambda v=v: setattr(_UI['form'], 'TopMost', v))
+                applied_top = v
+                api_log('置顶状态 → %s' % v)
+            if st.get('show', 0) != applied_show:
+                applied_show = st.get('show', 0)
+                win_show()
+        except Exception:
+            pass
+
+
 def run_window(html):
     port = pick_free_port()
     if port:
@@ -518,6 +793,8 @@ def run_window(html):
     else:
         # 助手起不来时退回直塞，功能都在，只是设置不落盘
         window = webview.create_window(APP_TITLE, html=with_api(html), **opts)
+    install_window_behavior()
+    threading.Thread(target=win_state_poller, daemon=True).start()
     if UPDATE_BASE:
         threading.Thread(target=silent_update, args=(window,), daemon=True).start()
     # pywebview 默认 private_mode=True —— 文档原话「cookies and local storage are not
