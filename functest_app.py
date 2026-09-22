@@ -8,7 +8,7 @@
 用法: python functest_app.py [--exe 路径]
 测试会临时改写状态文件 win_state.json，跑完还原。
 """
-import ctypes, json, os, re, subprocess, sys, time, urllib.request
+import ctypes, io, json, os, re, subprocess, sys, time, urllib.request
 from ctypes import wintypes
 
 try:
@@ -76,16 +76,41 @@ def is_visible(hwnd):
 
 
 def cleanup_helpers():
-    """上一轮测试如果被硬杀，助手子进程会活下来占着 51900-51904，
-    导致本轮的辅助检查认错端口；它自己有 /quit，先礼貌请走。"""
-    for port in PORTS:
+    """清掉上一轮残留的助手进程。
+
+    注意：/quit 现在也要令牌（防同机网页关掉助手），所以测试没法再用「礼貌请走」那一招；
+    改成按端口找占用者直接杀 —— 残留的助手会占着 51900-51904，让后面的检查认错对象。
+    """
+    # 1) 程序自己落的 PID 文件（源码版实例不会监听端口，只能靠它找）
+    try:
+        pid = io.open(os.path.join(CACHE, 'app.pid'), encoding='utf-8').read().strip()
+        if pid.isdigit():
+            subprocess.run(['taskkill', '/F', '/PID', pid], capture_output=True, timeout=30)
+            print('    · 清掉上次遗留的实例 pid=%s（app.pid）' % pid)
+    except Exception:
+        pass
+    # 2) 占着 51900-51904 的助手进程
+    pids = set()
+    try:
+        out = subprocess.run(['netstat', '-ano', '-p', 'TCP'], capture_output=True,
+                             text=True, timeout=30).stdout
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) >= 5 and parts[3] == 'LISTENING' and parts[2].startswith('0.0.0.0:0'):
+                for p in PORTS:
+                    if parts[1].endswith(':%d' % p):
+                        pids.add(parts[4])
+    except Exception:
+        pass
+    for pid in pids:
         try:
-            with urllib.request.urlopen('http://127.0.0.1:%d/quit' % port, timeout=1) as r:
-                r.read()
-            print('    · 清掉了上一轮残留的助手进程（端口 %d）' % port)
+            subprocess.run(['taskkill', '/F', '/PID', str(pid)],
+                           capture_output=True, timeout=30)
+            print('    · 清掉残留的助手进程 pid=%s' % pid)
         except Exception:
             pass
-    time.sleep(1.0)
+    if pids:
+        time.sleep(1.0)
 
 
 def probe(port):
@@ -135,6 +160,26 @@ def write_state(**kw):
     os.makedirs(CACHE, exist_ok=True)
     with open(STATE, 'w', encoding='utf-8') as f:
         json.dump(st, f)
+
+
+TOKEN = None
+
+
+def refresh_token(port):
+    """换了新实例就换一把令牌：每个壳进程自己生成，旧令牌对新助手无效（403）"""
+    global TOKEN
+    try:
+        page = http('http://127.0.0.1:%d/' % port)
+        m = re.search(r'window\.SQZY_TOKEN="([0-9a-f]{16,})"', page)
+        TOKEN = m.group(1) if m else ''
+    except Exception:
+        TOKEN = ''
+    return TOKEN
+
+
+def call_state(port, qs):
+    """带令牌调 /state：壳现在会校验令牌，不带一律 403"""
+    return http('http://127.0.0.1:%d/state?%s&k=%s' % (port, qs, TOKEN or ''))
 
 
 def read_run():
@@ -228,22 +273,26 @@ def main():
 
         # ---- 首页真的由助手发出来（否则设置不落盘、通知发不出去） ----
         page = http('http://127.0.0.1:%d/' % port)
+        refresh_token(port)
         check('助手能把页面用 http 发给窗口',
               'window.SQZY_API="http://127.0.0.1:%d"' % port in page and 'id="nowBar"' in page,
               '页面注入或内容不对（%d 字节）' % len(page.encode('utf-8')))
-        # 注意：缓存里可能还躺着旧版页面（缓存优先是设计如此），
-        # 所以令牌只在「注入的 head 标签」和「本地主页面」两处检查
+        # 本地接口的令牌：页面必须拿到（页面靠它调 /notify /state /config 等写接口），
+        # 而且壳必须会校验（无令牌一律 403，见 selftest_api）
         head = page.split('</head>')[0]
-        check('注入的标签里不再有没人校验的令牌', 'SQZY_TOKEN' not in head, '注入里还有 SQZY_TOKEN')
+        m = re.search(r'window\.SQZY_TOKEN="([0-9a-f]{16,})"', head)
+        check('注入的标签里带着本地接口令牌', bool(m),
+              '注入里没有带够长度的 SQZY_TOKEN：%r' % (head[:120],))
         with open(os.path.join(here, '宿迁职业技术学院作息时间表.html'), encoding='utf-8') as f:
             master = f.read()
-        check('主页面源码里也没有这个令牌了', 'SQZY_TOKEN' not in master, '主页面里还有 SQZY_TOKEN')
+        check('主页面把令牌带给每个本地接口调用', 'apiQs()' in master and 'SQZY_TOKEN' in master,
+              '页面里没有用令牌')
 
         # ---- 置顶：网页写状态 → 助手落盘 → 主进程轮询 → 窗口 ----
-        http('http://127.0.0.1:%d/state?top=1' % port)
+        call_state(port, 'top=1')
         got = wait_for(lambda: is_topmost(hwnd), 8)
         check('网页点「置顶」→ 窗口真的置顶', got, '窗口 EXSTYLE 里没有 WS_EX_TOPMOST')
-        http('http://127.0.0.1:%d/state?top=0' % port)
+        call_state(port, 'top=0')
         gone = wait_for(lambda: not is_topmost(hwnd), 8)
         check('取消置顶 → 窗口恢复正常层级', gone, '还是置顶状态')
         st = read_state()
@@ -251,7 +300,7 @@ def main():
               'win_state.json=%r' % st)
 
         # ---- 关闭按钮 → 隐藏到托盘 ----
-        http('http://127.0.0.1:%d/state?close=tray' % port)
+        call_state(port, 'close=tray')
         time.sleep(0.6)
         user32.PostMessageW(hwnd, 0x0010, 0, 0)      # WM_CLOSE
         hidden = wait_for(lambda: not is_visible(hwnd), 8)
@@ -268,7 +317,7 @@ def main():
         check('全机只有一个窗口', n_win == 1, '出现了 %d 个窗口' % n_win)
 
         # ---- 置顶也能被唤回后的窗口保持 ----
-        http('http://127.0.0.1:%d/state?top=1' % port)
+        call_state(port, 'top=1')
         wait_for(lambda: is_topmost(hwnd), 8)
         p3 = launch(cmd)
         wait_for(lambda: p3.poll() is not None, 12)
@@ -276,7 +325,7 @@ def main():
               '置顶被清掉了')
 
         # ---- 关闭方式=直接退出 ----
-        http('http://127.0.0.1:%d/state?close=exit' % port)
+        call_state(port, 'close=exit')
         time.sleep(0.6)
         user32.PostMessageW(hwnd, 0x0010, 0, 0)
         gone_proc = wait_for(lambda: p1.poll() is not None, 20)
@@ -294,10 +343,11 @@ def main():
         cleanup_helpers()          # 起新实例前先让残留的助手让位
         p4 = launch(cmd)
         port4 = wait_for(helper_port, 20)
+        refresh_token(port4)
         if not port4:
             bad('自启动测试：助手没起来', '51900-51904 都没应答')
         else:
-            http('http://127.0.0.1:%d/state?startup=1' % port4)
+            call_state(port4, 'startup=1')
             v1 = wait_for(read_run, 6)
             check('勾上「开机自启动」→ 写入启动项', bool(v1), '注册表里没有启动项')
             check('启动项命令带 --tray（开机静默进托盘）', bool(v1) and '--tray' in v1,
@@ -305,12 +355,12 @@ def main():
             st = json.loads(http('http://127.0.0.1:%d/state' % port4))
             check('页面能从 /state 读到自启动状态', st.get('state', {}).get('autostart') is True,
                   'state=%r' % (st.get('state'),))
-            http('http://127.0.0.1:%d/state?startup=0' % port4)
+            call_state(port4, 'startup=0')
             time.sleep(0.8)
             check('取消勾选 → 启动项被移除', read_run() is None, '还留着：%r' % (read_run(),))
             # 再打开一次，用来测 --tray 静默启动
-            http('http://127.0.0.1:%d/state?close=exit' % port4)
-            http('http://127.0.0.1:%d/state?startup=1' % port4)
+            call_state(port4, 'close=exit')
+            call_state(port4, 'startup=1')
             time.sleep(0.5)
             ctypes.windll.user32.PostMessageW(windows_of_title()[-1], 0x0010, 0, 0)
             wait_for(lambda: p4.poll() is not None, 20)
@@ -318,6 +368,7 @@ def main():
         cleanup_helpers()
         p5 = launch(cmd + ['--tray'])
         port5 = wait_for(helper_port, 20)
+        refresh_token(port5)
         hwnd5 = wait_for(lambda: (windows_of_title() or [None])[-1], 20)
         if not hwnd5 or not port5:
             bad('--tray 静默启动', '窗口或助手没起来')
@@ -325,7 +376,7 @@ def main():
             time.sleep(1.5)
             check('--tray 启动时窗口是隐藏的（不打扰开机）', not is_visible(hwnd5),
                   '窗口居然可见')
-            http('http://127.0.0.1:%d/state?close=exit' % port5)
+            call_state(port5, 'close=exit')
             time.sleep(0.5)
             ctypes.windll.user32.PostMessageW(hwnd5, 0x0010, 0, 0)
             check('隐藏启动的进程能正常退出', wait_for(lambda: p5.poll() is not None, 20),
