@@ -204,6 +204,8 @@ def main():
     write_state(always_on_top=False, close_mode='tray', show=0)
 
     p1 = p2 = p4 = p5 = None
+    had = None
+    touched_run = False
     try:
         print('  [桌面外壳 · %s]' % label)
         p1 = launch(cmd)
@@ -284,7 +286,11 @@ def main():
 
         # ---- 开机自启动：网页开关 → 注册表 HKCU\...\Run ----
         had = read_run()
-        check('默认没有自启动项', had is None, '本来就有一条：%r' % (had,))
+        touched_run = True
+        if had:
+            print('    · 机器上本来就有自启动项，先记下来，测试结束时原样还原：%s' % had[:60])
+        else:
+            check('默认没有自启动项', True, '')
         cleanup_helpers()          # 起新实例前先让残留的助手让位
         p4 = launch(cmd)
         port4 = wait_for(helper_port, 20)
@@ -324,8 +330,11 @@ def main():
             ctypes.windll.user32.PostMessageW(hwnd5, 0x0010, 0, 0)
             check('隐藏启动的进程能正常退出', wait_for(lambda: p5.poll() is not None, 20),
                   '进程还在（返回码 %s）' % p5.poll())
-        restore_run(had)
     finally:
+        # 注册表里的自启动项一定要复原：中途崩了也不能在用户机器上留下开机自启
+        if touched_run:
+            restore_run(had)
+            print('    · 自启动项已还原')
         # 能好好退就好好退：硬杀会把它拉起的助手进程留成孤儿
         for p in (p1, p2, p4, p5):
             if not p or p.poll() is not None:
