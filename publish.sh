@@ -67,6 +67,18 @@ PYEOF
 # 写成可被 <script> 加载的 JS：网页侧没有跨域限制，手机版也能检测更新
 python -c "import io,json,sys; io.open('$OUT/version.txt','w',encoding='utf-8',newline=chr(10)).write('window.SQZY_LATEST='+json.dumps({'v':sys.argv[1],'h':sys.argv[2],'t':sys.argv[3]},ensure_ascii=False)+';'+chr(10))" "$VER" "$HASH" "$STAMP"
 
+# program.txt：程序本体（exe/apk）当前发布的版本。网页能热更新、程序本体不能，
+# 页面靠这个文件发现「网页已经是最新，但装着的 exe/apk 老了」并提醒去下载。
+TAG=$(python - "$HTML" <<'PYEOF'
+import io, re, sys
+s = io.open(sys.argv[1], encoding='utf-8').read()
+m = re.search(r"var RELEASE_TAG = '([^']+)'", s)
+print(m.group(1) if m else 'v0')
+PYEOF
+)
+python -c "import io,json,sys; io.open('$OUT/program.txt','w',encoding='utf-8',newline=chr(10)).write('window.SQZY_PROGRAM='+json.dumps({'exe':sys.argv[1],'apk':sys.argv[1],'tag':sys.argv[2],'t':sys.argv[3]},ensure_ascii=False)+';'+chr(10))" "$VER" "$TAG" "$STAMP"
+echo "   program.txt  $(cat "$OUT/program.txt")"
+
 echo "================================================"
 echo " 发布包已生成： $OUT/"
 echo "   index.html   $(du -k "$OUT/index.html" | cut -f1) KB"
