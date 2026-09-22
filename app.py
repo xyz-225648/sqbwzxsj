@@ -16,6 +16,7 @@ import http.server
 import json
 import os
 import re
+import secrets
 import socket
 import socketserver
 import subprocess
@@ -33,7 +34,7 @@ HTML_NAME = '宿迁职业技术学院作息时间表.html'
 APP_TITLE = '宿迁职业技术学院作息时间表'
 # 桌面壳自己的版本号：必须和页面里的 APP_VERSION、安卓 versionName 一致。
 # 页面拿它跟仓库里的 program.txt 比，用来发现「网页是最新的、但程序本体老了」。
-SHELL_VERSION = 'v2.1.1'
+SHELL_VERSION = 'v2.1.2'
 WEBVIEW2_GUID = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
 
 UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/'
@@ -288,6 +289,12 @@ def notify_windows(title, body):
 # ==================== 网页 <-> exe 的本地接口 ====================
 _PORT = [0]
 _HELPER = []
+# 本地接口的令牌：每次启动随机生成，只注入给本程序自己发出的页面。
+# 为什么必须要有：接口监听在 127.0.0.1:51900，浏览器里打开的**任意网页**都能向它发 GET
+# （CORS 只拦读响应，不拦发请求），于是能伪造系统通知、改窗口状态、甚至把助手关掉。
+# 只读接口（页面本体、版本、/ping）放行，会改东西的接口（state / notify / open / quit / config）必须带令牌。
+_TOKEN = [secrets.token_hex(16)]
+OPEN_PATHS = ('/', '/index.html', '/ping', '/latest', '/version')
 
 
 def stop_helper():
@@ -317,10 +324,10 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
-    def _reply(self, obj):
+    def _reply(self, obj, code=200):
         try:
             body = json.dumps(obj, ensure_ascii=False).encode('utf-8')
-            self.send_response(200)
+            self.send_response(code)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.send_header('Cache-Control', 'no-store')
@@ -330,9 +337,22 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
         except Exception as exc:
             api_log('reply 失败 %r' % (exc,), 'warn')
 
+    def token_ok(self, q):
+        given = (q.get('k', [''])[0] or self.headers.get('X-SQZY-Token', '') or '').strip()
+        return bool(given) and given == _TOKEN[0]
+
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)
         q = urllib.parse.parse_qs(u.query)
+        # 会改状态的接口必须带令牌；/state 只在「写」的时候要求（只读无副作用）
+        need = False
+        if u.path == '/notify' or u.path == '/open' or u.path == '/quit' or u.path == '/config':
+            need = True
+        elif u.path == '/state' and any(k in q for k in ('top', 'close', 'show', 'startup')):
+            need = True
+        if need and not self.token_ok(q):
+            api_log('拒绝无令牌请求 %s（可能有网页在扫本地端口）' % u.path, 'warn')
+            return self._reply({'ok': False, 'err': 'missing or bad token'}, code=403)
         # 不加访问令牌。曾经加过，代价是老版本缓存页不带令牌就被拒绝，
         # 直接导致「检查更新失败」和「通知发不出去」两次线上故障；
         # 而它挡住的只是「同机网页可能伪造一条通知」，收益远小于代价。
@@ -377,6 +397,11 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
         if u.path == '/version':
             # 页面用它判断「程序本体要不要更新」（网页自己能热更新，exe 不能）
             return self._reply({'ok': True, 'kind': 'exe', 'shell': SHELL_VERSION})
+        if u.path == '/config':
+            # 页面设置的落盘副本：GET 读，?set=<json> 写（都要令牌，见上面闸门）
+            if 'set' in q:
+                return self._reply({'ok': write_settings(q['set'][0])})
+            return self._reply({'ok': True, 'settings': read_settings()})
         if u.path == '/open':
             url = q.get('url', [''])[0]
             if url.startswith('https://gitee.com/') or url.startswith('https://github.com/'):
@@ -420,6 +445,44 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
             api_log('notify(%r) -> %r' % (title, ok))
             return self._reply({'ok': ok})
         return self._reply({'ok': False, 'err': 'unknown'})
+
+
+def settings_path():
+    return os.path.join(cache_dir(), 'settings.json')
+
+
+def read_settings():
+    """页面的设置落一份到文件：只靠 WebView2 的 localStorage，「设置改完马上重启」时
+    可能还没刷盘，下次打开就回到了默认（issue IKHTOU 里的「快速重启丢设置」）。"""
+    raw = read_text(settings_path())
+    if not raw:
+        return None
+    try:
+        o = json.loads(raw)
+        return o if isinstance(o, dict) else None
+    except Exception:
+        return None
+
+
+def write_settings(text):
+    """接收页面传来的 {'cfg':..., 't':...}，原子落盘；只接受小体积 JSON 对象"""
+    if not text or len(text) > 16384:
+        return False
+    try:
+        o = json.loads(text)
+    except Exception:
+        return False
+    if not isinstance(o, dict) or 'cfg' not in o:
+        return False
+    tmp = settings_path() + '.tmp'
+    try:
+        with open(tmp, 'w', encoding='utf-8', newline='') as f:
+            json.dump(o, f, ensure_ascii=False)
+        os.replace(tmp, settings_path())
+        return True
+    except Exception as exc:
+        api_log('写设置失败 %r' % (exc,), 'warn')
+        return False
 
 
 def port_free(p):
@@ -469,7 +532,8 @@ def with_api(html):
     """把本地接口地址注入页面（自动更新热替换后也要重新注入）"""
     if not _PORT[0]:
         return html
-    tag = '<script>window.SQZY_API="http://127.0.0.1:%d";</script>' % _PORT[0]
+    tag = ('<script>window.SQZY_API="http://127.0.0.1:%d";'
+           'window.SQZY_TOKEN="%s";</script>') % (_PORT[0], _TOKEN[0])
     if '<head>' in html:
         return html.replace('<head>', '<head>' + tag, 1)
     return tag + html
@@ -927,7 +991,7 @@ def win_state_poller():
             pass
 
 
-def helper_ready(port, timeout=4.0):
+def helper_ready(port, timeout=15.0):
     """助手进程到底起来没有 —— 真连一次 /ping 才算数。
     不确认就拿 http://127.0.0.1:端口 去开窗口，助手要是没起来，
     用户看到的就是一页「无法访问此页面」（踩过）。"""
@@ -975,7 +1039,8 @@ def run_window(html):
         except Exception as exc:
             api_log('助手进程启动失败 %r' % (exc,), 'error')
     if port and not helper_ready(port):
-        api_log('助手进程 4 秒内没有应答，本次改为直接塞页面（系统通知/窗口置顶会缺）', 'warn')
+        api_log('助手进程 15 秒内没有应答，本次改为直接塞页面'
+                '（系统通知/窗口置顶/设置落盘会缺）', 'warn')
         stop_helper()
         _PORT[0] = 0
         port = 0
@@ -1026,6 +1091,8 @@ def main():
         api_log('已有实例在运行，已请它显示到前台，本进程退出')
         return
     refresh_autostart()                 # exe 被挪了地方也能自愈
+    # 把 PID 落盘：启动不了时（比如上次的进程没退干净）能一眼看出是谁占着
+    write_text(os.path.join(cache_dir(), 'app.pid'), str(os.getpid()))
     html = load_current_html()
 
     if not has_webview2():
