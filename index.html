@@ -1114,13 +1114,17 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.1.0';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.1.1';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 安卓安装包挂在哪个发行版 tag 下。故意固定在 v1.0 不动：tag 一换，
    老页面里写死的下载链接就会 404；附件内容每次发布时原地替换，链接永远有效。 */
-var RELEASE_TAG = 'v2.1.0';
+var RELEASE_TAG = 'v2.1.1';
 var latestInfo = null;
+/* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
+var SHELL_SEEN_KEY = 'sqzy-seen-shell';
+var shellVer = null;        /* 当前壳自报的版本；拿不到就是 null（网页版 / 老版 exe） */
+var programInfo = null;     /* 仓库里 program.txt 的内容 */
 var notifyCfg = { on:true, before:true, next:true, start:false, end:false, min:5,
                   tracks:[true,true,true,true] };
 var firedKeys = {};
@@ -1334,6 +1338,131 @@ function showUpdateDialog(info){
   later.addEventListener('click', function(){ closeDialog('upDlg'); });
   wrap.addEventListener('click', function(e){ if (e.target === wrap) closeDialog('upDlg'); });
 }
+function normVer(v){
+  var m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(String(v || ''));
+  return m ? 'v' + m[1] + '.' + m[2] + '.' + m[3] : '';
+}
+function verNum(v){
+  var m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(String(v || ''));
+  return m ? (+m[1]) * 10000 + (+m[2]) * 100 + (+m[3]) : -1;
+}
+function shellKey(){ return isAndroid() ? 'apk' : 'exe'; }
+function shellName(){ return isAndroid() ? '手机版安装包' : 'Windows 程序'; }
+function shellDownloadUrl(info){
+  var tag = (info && info.tag) || RELEASE_TAG;
+  return 'https://gitee.com/xyz-225648/sqbwzxsj/releases/tag/' + tag;
+}
+function openExternal(url){
+  /* 桌面版的页面在 WebView 里，点外链得让壳用系统浏览器打开 */
+  var base = apiBase();
+  if (base){
+    try{
+      fetch(base + '/open?url=' + encodeURIComponent(url)).then(function(r){ return r.json(); })
+        .then(function(o){ if (!o || !o.ok) window.open(url, '_blank'); })
+        .catch(function(){ window.open(url, '_blank'); });
+      return;
+    }catch(e){}
+  }
+  window.open(url, '_blank');
+}
+function detectShell(cb){
+  /* 安卓问原生桥，桌面问本地接口，网页版没有壳 */
+  try{
+    if (window.SQZY_ANDROID && window.SQZY_ANDROID.version){
+      shellVer = normVer(window.SQZY_ANDROID.version());
+      if (cb) cb();
+      return;
+    }
+  }catch(e){}
+  var base = apiBase();
+  if (!base){ if (cb) cb(); return; }
+  try{
+    fetch(base + '/version').then(function(r){ return r.json(); }).then(function(o){
+      if (o && o.ok && o.shell) shellVer = normVer(o.shell);
+      if (cb) cb();
+    }).catch(function(){ if (cb) cb(); });
+  }catch(e){ if (cb) cb(); }
+}
+function renderShellNote(text, hi, url){
+  var box = document.getElementById('aboutShell');
+  if (!box) return;
+  box.textContent = text || '';
+  box.className = 'setnote' + (hi ? ' hi' : '');
+  var btn = document.getElementById('aboutDownload');
+  if (btn){
+    btn.style.display = url ? '' : 'none';
+    btn.onclick = url ? function(){ openExternal(url); } : null;
+  }
+}
+function applyProgramInfo(info){
+  programInfo = info;
+  if (!info) return;
+  if (!shellVer){
+    /* 网页版没有程序本体；老版 exe/apk 也不会自报版本，这里不打扰 */
+    return;
+  }
+  var want = normVer(info[shellKey()]);
+  if (!want) return;
+  if (verNum(want) <= verNum(shellVer)){
+    renderShellNote('程序本体：' + shellVer + '（' + shellName() + '已是最新）', false, '');
+    return;
+  }
+  renderShellNote('程序本体：' + shellVer + ' → 有新版 ' + want + '（网页已自动更新，' +
+                  shellName() + '要手动换）', true, shellDownloadUrl(info));
+  if (safeGet(SHELL_SEEN_KEY) !== want){
+    safeSet(SHELL_SEEN_KEY, want);
+    showShellDialog(shellVer, want, shellDownloadUrl(info));
+  }
+}
+function showShellDialog(cur, want, url){
+  closeDialog('shDlg');
+  var wrap = document.createElement('div');
+  wrap.className = 'sheet'; wrap.id = 'shDlg';
+  sheetOpen(wrap);
+  var card = document.createElement('div');
+  card.className = 'sheet-card';
+  card.style.maxWidth = '400px';
+  card.innerHTML = '<div class="sheet-head"><b>程序本体有新版</b><span class="sheet-x" id="shClose">✕</span></div>' +
+    '<div class="setnote" style="margin:0 0 6px">课表内容会自动更新，但' + shellName() +
+    '不能自动替换，得手动装一次。</div>' +
+    '<div class="setrow" style="display:block"><b>当前：</b>' + cur + '　<b>新版：</b>' +
+    '<span style="color:#1d4ed8">' + want + '</span></div>';
+  var go = document.createElement('button');
+  go.type = 'button'; go.className = 'settest'; go.textContent = '去下载新版';
+  var later = document.createElement('button');
+  later.type = 'button'; later.className = 'settest';
+  later.style.background = '#e2e8f0'; later.style.color = '#0f172a';
+  later.textContent = '稍后再说';
+  card.appendChild(go); card.appendChild(later);
+  wrap.appendChild(card);
+  document.body.appendChild(wrap);
+  go.addEventListener('click', function(){ openExternal(url); closeDialog('shDlg'); });
+  later.addEventListener('click', function(){ closeDialog('shDlg'); });
+  document.getElementById('shClose').addEventListener('click', function(){ closeDialog('shDlg'); });
+  wrap.addEventListener('click', function(e){ if (e.target === wrap) closeDialog('shDlg'); });
+}
+function checkShellProgram(manual){
+  detectShell(function(){
+    var base = apiBase();
+    if (base){
+      /* 桌面版：/latest 里已经顺手带了 program（同一次请求，不额外发起） */
+      if (programInfo) applyProgramInfo(programInfo);
+      else if (manual) renderShellNote('拿不到程序本体的版本信息（检查更新试试）', false, '');
+      return;
+    }
+    var s = document.createElement('script');
+    s.src = UPDATE_BASE + 'program.txt?t=' + Date.now();
+    s.onload = function(){
+      applyProgramInfo(window.SQZY_PROGRAM || null);
+      if (s.parentNode) s.parentNode.removeChild(s);
+    };
+    s.onerror = function(){
+      if (manual) renderShellNote('拿不到程序本体的版本信息（检查网络）', false, '');
+      if (s.parentNode) s.parentNode.removeChild(s);
+    };
+    document.head.appendChild(s);
+  });
+}
 function applyUpdateInfo(info, manual){
   latestInfo = info;
   renderAbout();
@@ -1364,6 +1493,7 @@ function checkAppUpdate(manual){
     try{
       fetch(base + '/latest').then(function(r){ return r.json(); }).then(function(d){
         applyUpdateInfo((d && d.latest) ? d.latest : null, manual);
+        applyProgramInfo((d && d.program) ? d.program : null);   /* exe 本体版本 */
       }).catch(function(){ applyUpdateInfo(null, manual); });
       return;
     }catch(e){}
@@ -1373,6 +1503,7 @@ function checkAppUpdate(manual){
   s.onload = function(){
     applyUpdateInfo(window.SQZY_LATEST || null, manual);
     if (s.parentNode) s.parentNode.removeChild(s);
+    if (window.SQZY_PROGRAM) applyProgramInfo(window.SQZY_PROGRAM);   /* 安卓：装包版本 */
   };
   s.onerror = function(){
     applyUpdateInfo(null, manual);
@@ -1494,6 +1625,8 @@ function initSettings(){
         '<button class="settest" id="aboutCheck" type="button" style="width:auto;margin:0;white-space:nowrap">检查更新</button>' +
       '</div>' +
       '<div class="setnote" id="aboutNote"></div>' +
+      '<div class="setnote" id="aboutShell"></div>' +
+      '<button class="settest" id="aboutDownload" type="button" style="display:none">去下载程序本体新版</button>' +
     '</div>';
   document.body.appendChild(sheet);
 
@@ -1580,6 +1713,7 @@ function initSettings(){
   }
   renderAbout();
   setTimeout(function(){ checkAppUpdate(false); }, 1500);
+  setTimeout(function(){ checkShellProgram(false); }, 2600);   /* 网页已是最新时，也要看程序本体 */
   if (apiBase()) markReady();
   /* pywebview 注入 api 的时机不一定早于本页脚本，主动轮询兜底 */
   var bridgeTries = 0;
@@ -1588,6 +1722,10 @@ function initSettings(){
     if (++bridgeTries < 60) setTimeout(waitBridge, 500);
   })();
   window.SQZY_CHECKNOTIFY = checkNotify;   /* 自检钩子 */
+  window.SQZY_CHECKSHELL = checkShellProgram;
+  window.SQZY_APPLYPROGRAM = applyProgramInfo;
+  window.SQZY_SETSHELL = function(v){ shellVer = normVer(v); };
+  window.SQZY_GETSHELL = function(){ return shellVer; };
   window.SQZY_SEGAT = segAtMin;
   window.SQZY_CFG = notifyCfg;
   setInterval(checkNotify, 15000);
