@@ -34,7 +34,7 @@ HTML_NAME = '宿迁职业技术学院作息时间表.html'
 APP_TITLE = '宿迁职业技术学院作息时间表'
 # 桌面壳自己的版本号：必须和页面里的 APP_VERSION、安卓 versionName 一致。
 # 页面拿它跟仓库里的 program.txt 比，用来发现「网页是最新的、但程序本体老了」。
-SHELL_VERSION = 'v2.1.2'
+SHELL_VERSION = 'v2.1.3'
 WEBVIEW2_GUID = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
 
 UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/'
@@ -329,7 +329,8 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
             body = json.dumps(obj, ensure_ascii=False).encode('utf-8')
             self.send_response(code)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
-            self.send_header('Access-Control-Allow-Origin', '*')
+            # 不发 Access-Control-Allow-Origin：页面与接口本来就同源，不需要它；
+            # 发 * 等于允许任何网站读走本地接口的响应（多余暴露）。
             self.send_header('Cache-Control', 'no-store')
             self.send_header('Content-Length', str(len(body)))
             self.end_headers()
@@ -344,6 +345,12 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)
         q = urllib.parse.parse_qs(u.query)
+        # 跨站请求一律拒：页面同源发请求时不带 Origin（或带自己的 127.0.0.1 端口）
+        origin = (self.headers.get('Origin') or '').strip()
+        if origin and not (origin.startswith('http://127.0.0.1:')
+                           or origin.startswith('http://localhost:')):
+            api_log('拒绝跨站请求 Origin=%r path=%s' % (origin, u.path), 'warn')
+            return self._reply({'ok': False, 'err': 'cross-site request refused'}, code=403)
         # 会改状态的接口必须带令牌；/state 只在「写」的时候要求（只读无副作用）
         need = False
         if u.path == '/notify' or u.path == '/open' or u.path == '/quit' or u.path == '/config':
@@ -361,7 +368,19 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
             # 页面走 http 打开，而不是 pywebview 的 html= 直塞：
             # 直塞出来的文档 origin 是 opaque，localStorage 直接抛 SecurityError，
             # 表现就是「设置改完不保存」。给它一个真实 origin 即可。
-            body = with_api(load_current_html()).encode('utf-8')
+            try:
+                body = with_api(load_current_html()).encode('utf-8')
+            except Exception as exc:
+                # 内置页面缺失之类：别让请求静默断掉，至少回一页说明并记日志
+                api_log('首页内容取不到 %r' % (exc,), 'error')
+                api_log(traceback.format_exc().replace(chr(10), ' | '), 'error')
+                body = ('<!doctype html><html lang="zh-CN"><meta charset="utf-8">'
+                        '<title>页面暂时读不出来</title>'
+                        '<body style="font-family:system-ui;padding:32px">'
+                        '<h3>页面暂时读不出来</h3><p>程序自己的日志里有详细原因'
+                        '（api.log）。可以按下面两步试试：</p>'
+                        '<ol><li>关掉程序重新打开</li><li>还不行就把 api.log 发出来</li></ol>'
+                        '</body></html>').encode('utf-8')
             try:
                 self.send_response(200)
                 self.send_header('Content-Type', 'text/html; charset=utf-8')
@@ -511,6 +530,12 @@ def pick_free_port():
         return 0
 
 
+class _ApiServer(socketserver.ThreadingTCPServer):
+    """SO_REUSEADDR + 每个连接一个线程；这两个都必须是类属性，构造时就生效"""
+    allow_reuse_address = True
+    daemon_threads = True
+
+
 def run_api_server(port):
     """助手进程里跑这个：独立进程不受 pywebview 消息循环影响"""
     # 助手自己也要知道自己在哪个端口：它负责把页面用 http 发给窗口，
@@ -518,9 +543,11 @@ def run_api_server(port):
     # 不设这个值 → 注入被跳过 → 页面以为自己在浏览器里，通知全落到页面内提示。
     _PORT[0] = port
     try:
-        srv = socketserver.ThreadingTCPServer(('127.0.0.1', port), _ApiHandler)
-        srv.daemon_threads = True
-        srv.allow_reuse_address = True
+        # 注意：allow_reuse_address 必须在**实例化之前**设成类属性 —— 绑定发生在
+        # 构造函数里，构造完再赋值是无效的（踩过：助手退出后 60 秒内 TIME_WAIT 没散，
+        # 重启就 bind 失败，只好退到 51901+，而 localStorage 按「host:端口」隔离，
+        # 设置看起来又"丢"了）。
+        srv = _ApiServer(('127.0.0.1', port), _ApiHandler)
         api_log('助手进程开始服务 端口=%d' % port)
         srv.serve_forever()
         api_log('助手进程已优雅退出')
@@ -552,9 +579,9 @@ def has_webview2():
     try:
         import winreg
         roots = [
-            (winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\\' + WEBVIEW2_GUID),
-            (winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\EdgeUpdate\Clients\\' + WEBVIEW2_GUID),
-            (winreg.HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\EdgeUpdate\Clients\\' + WEBVIEW2_GUID),
+            (winreg.HKEY_LOCAL_MACHINE, 'SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\' + WEBVIEW2_GUID),
+            (winreg.HKEY_LOCAL_MACHINE, 'SOFTWARE\\Microsoft\\EdgeUpdate\\Clients\\' + WEBVIEW2_GUID),
+            (winreg.HKEY_CURRENT_USER, 'SOFTWARE\\Microsoft\\EdgeUpdate\\Clients\\' + WEBVIEW2_GUID),
         ]
         for root, path in roots:
             try:

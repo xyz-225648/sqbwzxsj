@@ -1,1 +1,1 @@
-window.SQZY_PROGRAM={"exe": "v2.1.2", "apk": "v2.1.2", "tag": "v2.1.2", "t": "2026-09-22 15:52"};
+window.SQZY_PROGRAM={"exe": "v2.1.3", "apk": "v2.1.3", "tag": "v2.1.3", "t": "2026-09-22 16:19"};

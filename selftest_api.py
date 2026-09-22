@@ -4,7 +4,7 @@
 
 用法: python selftest_api.py [exe 或 app.py 路径] [端口]
 """
-import json, os, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
+import json, os, socket, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
 
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -13,7 +13,16 @@ except Exception:
 
 TITLE = '宿迁职业技术学院作息时间表'
 target = sys.argv[1] if len(sys.argv) > 1 else '宿迁职业技术学院作息时间表.exe'
-port = int(sys.argv[2]) if len(sys.argv) > 2 else 18999
+def free_port():
+    """默认端口动态挑一个：固定端口在上次残留 / TIME_WAIT 时会卡住重跑"""
+    s = socket.socket()
+    s.bind(('127.0.0.1', 0))
+    p = s.getsockname()[1]
+    s.close()
+    return p
+
+
+port = int(sys.argv[2]) if len(sys.argv) > 2 else free_port()
 TESTHOME = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.testdata')
 STATE = os.path.join(TESTHOME, TITLE, 'win_state.json')
 
@@ -95,8 +104,14 @@ try:
 
         st3, body3 = call('/notify', k=token, title='exe 接口自检', body='带令牌的通知')
         print('   /notify    带令牌 → HTTP %s %s' % (st3, body3[:40]))
-        if '"ok": true' not in body3 and '"ok":true' not in body3:
+        # 令牌这一关过了就行；ok 的真假取决于平台（非 Windows 上发不出系统通知，返回 false 是对的）
+        if st3 != 200 or '"missing or bad token"' in body3:
             print('    ✗ 带令牌也被拒了（页面会发不出通知）'); rc = 1
+        elif sys.platform.startswith('win') and '"ok": true' not in body3:
+            print('    ✗ Windows 上带令牌应该能发通知'); rc = 1
+        elif not sys.platform.startswith('win'):
+            print('    · 非 Windows：ok=%s 属正常（没有 Windows 通知通道）'
+                  % ('true' if '"ok": true' in body3 else 'false'))
 
         payload = json.dumps({'cfg': {'on': True, 'min': 9, 'tracks': [True, False, True, True]}, 't': 123456})
         st4, body4 = call('/config', k=token, set=payload)
@@ -134,9 +149,9 @@ try:
             print('    ✗ 取消置顶没生效：%s' % body[:120]); rc = 1
 
         st, body = call('/notify', k=token, title='exe 接口自检', body='带令牌的通知')
-        print('  /notify    HTTP %d  %s   ← ok:true 说明不再要求令牌' % (st, body))
-        if '"ok": true' not in body and '"ok":true' not in body:
-            rc = 1
+        print('  /notify    HTTP %d  %s   ← 带令牌才允许（ok 取决于平台有没有通知通道）' % (st, body))
+        if st != 200 or '"missing or bad token"' in body:
+            print('    ✗ 带令牌仍被拒'); rc = 1
 
         st, body = call('/latest')
         print('  /latest    HTTP %d  %s' % (st, body[:150]))
