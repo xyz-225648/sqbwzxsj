@@ -134,6 +134,7 @@ python functest_app.py --exe 宿迁职业技术学院作息时间表.exe   # 测
 - 触发时机：每 6 小时一次 / GitHub 上 push 到 master（合并 PR 后立刻）/ 也可以在工作流页面手动点
 - 往 Gitee 推需要 GitHub 仓库里的 Actions secret `GITEE_TOKEN`（Gitee 私人令牌，勾 projects 权限）；没配的话只有 Gitee → GitHub 单向可用，反向那步会明确报错而不是假装成功
 - 主仓库仍然是 Gitee：产品改动按上面的「开发流程」在 Gitee 走 PR；在 GitHub 上开发也可以，合并后会由这个工作流推回 Gitee
+
 ### 在 GitHub 上开发
 
 1. 照常在 GitHub 上开分支、提 PR（讨论、评审都留在 GitHub）
