@@ -4,7 +4,7 @@
 
 用法: python selftest_api.py [exe 或 app.py 路径] [端口]
 """
-import json, os, subprocess, sys, time, urllib.parse, urllib.request
+import json, os, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
 
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -72,6 +72,41 @@ try:
 
         st, body = call('/version')
         print('  /version   HTTP %d  %s   ← 页面靠它判断「程序本体要不要更新」' % (st, body))
+        # 令牌：从壳发出来的页面里取（页面该有、别人不该有）
+        st, body = call('/')
+        import re as _re
+        m = _re.search(r'window.SQZY_TOKEN="([0-9a-f]+)"', body)
+        token = m.group(1) if m else ''
+        print('  页面里的令牌：%s' % (('已注入（%d 位）' % len(token)) if token else '✗ 没注入'))
+        if not token:
+            print('    ✗ 页面没拿到令牌 → 页面自己的通知/状态写入会被壳拒绝'); rc = 1
+
+        # 不带令牌的写操作必须被拒（否则同机任意网页都能伪造通知、改状态、关助手）
+        for label, path in (('/notify', '/notify?title=x&body=y'), ('/state 写', '/state?top=1'),
+                            ('/config 写', '/config?set=%7B%22cfg%22%3A%7B%7D%7D'),
+                            ('/open', '/open?url=https%3A%2F%2Fgitee.com%2Fx')):
+            try:
+                st2, body2 = call(path)
+            except urllib.error.HTTPError as e:
+                st2, body2 = e.code, e.read().decode('utf-8', 'replace')[:70]
+            print('   %-11s 无令牌 → HTTP %s %s' % (label, st2, body2[:52]))
+            if st2 != 403:
+                print('    ✗ 居然没拒绝（CSRF 面还在）'); rc = 1
+
+        st3, body3 = call('/notify', k=token, title='exe 接口自检', body='带令牌的通知')
+        print('   /notify    带令牌 → HTTP %s %s' % (st3, body3[:40]))
+        if '"ok": true' not in body3 and '"ok":true' not in body3:
+            print('    ✗ 带令牌也被拒了（页面会发不出通知）'); rc = 1
+
+        payload = json.dumps({'cfg': {'on': True, 'min': 9, 'tracks': [True, False, True, True]}, 't': 123456})
+        st4, body4 = call('/config', k=token, set=payload)
+        st5, body5 = call('/config', k=token)
+        print('   /config    写+读 → %s' % ('落盘并读回 ✓（min=9）' if '123456' in body5 else '✗ %s / %s' % (body4[:30], body5[:60])))
+        if '123456' not in body5:
+            print('    ✗ 设置没落盘（快速重启丢设置的问题还在）'); rc = 1
+
+        st, body = call('/version')      # 上面几步把 body 覆盖了，重新取一次再校验
+
         if '"shell": "v' not in body:
             print('    ✗ /version 没返回壳版本（页面的程序本体检查会失效）'); rc = 1
 
@@ -83,7 +118,7 @@ try:
                 and 'always_on_top' in d0['state']):
             print('    ✗ /state 读回来的结构不对'); rc = 1
 
-        st, body = call('/state', top='1', close='exit')
+        st, body = call('/state', k=token, top='1', close='exit')
         d1 = json.loads(body)
         print('  /state(写) HTTP %d  top=1 close=exit  → %s' % (st, body[:120]))
         disk = read_state()
@@ -94,11 +129,11 @@ try:
         else:
             print('    ✓ 状态已落盘 win_state.json（主进程靠它把置顶应用到窗口上）')
 
-        st, body = call('/state', top='0', close='tray')
+        st, body = call('/state', k=token, top='0', close='tray')
         if json.loads(body).get('state', {}).get('always_on_top') is not False:
             print('    ✗ 取消置顶没生效：%s' % body[:120]); rc = 1
 
-        st, body = call('/notify', title='exe 接口自检', body='不带令牌的通知测试')
+        st, body = call('/notify', k=token, title='exe 接口自检', body='带令牌的通知')
         print('  /notify    HTTP %d  %s   ← ok:true 说明不再要求令牌' % (st, body))
         if '"ok": true' not in body and '"ok":true' not in body:
             rc = 1
@@ -108,7 +143,7 @@ try:
         if '"v": "v' not in body:
             rc = 1
 
-        st, body = call('/quit')
+        st, body = call('/quit', k=token)
         print('  /quit      HTTP %d  %s' % (st, body))
 finally:
     for _ in range(20):
