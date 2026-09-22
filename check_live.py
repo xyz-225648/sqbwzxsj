@@ -49,6 +49,15 @@ m = re.search(r'\{.*\}', live_ver, re.S)
 live_v = json.loads(m.group(0))['v'] if m else '?'
 app_v = re.search(r"var APP_VERSION = '([^']+)'", local_page.decode('utf-8')).group(1)
 say(live_v == app_v, '线上版本号 %s == 页面 APP_VERSION %s' % (live_v, app_v))
+live_prog = (get(RAW + 'program.txt') or b'').decode('utf-8').strip()
+local_prog = open('release/program.txt', encoding='utf-8').read().strip()
+say(live_prog == local_prog, '线上 program.txt 与本地一致：%s' % live_prog[:80])
+mp = re.search(r'\{.*\}', live_prog, re.S)
+if mp:
+    prog = json.loads(mp.group(0))
+    say(prog.get('exe') == app_v and prog.get('apk') == app_v,
+        'program.txt 里的程序本体版本 == 页面版本（%s / %s，页面 %s）'
+        % (prog.get('exe'), prog.get('apk'), app_v))
 tag = re.search(r"var RELEASE_TAG = '([^']+)'", local_page.decode('utf-8')).group(1)
 for label, ext in (('安卓安装包', 'apk'), ('Windows 程序', 'exe')):
     name = '宿迁职业技术学院作息时间表.' + ext
