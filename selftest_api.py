@@ -14,11 +14,12 @@ except Exception:
 TITLE = '宿迁职业技术学院作息时间表'
 target = sys.argv[1] if len(sys.argv) > 1 else '宿迁职业技术学院作息时间表.exe'
 port = int(sys.argv[2]) if len(sys.argv) > 2 else 18999
-STATE = os.path.join(os.environ.get('LOCALAPPDATA') or os.environ.get('TEMP') or '.',
-                     TITLE, 'win_state.json')
+TESTHOME = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.testdata')
+STATE = os.path.join(TESTHOME, TITLE, 'win_state.json')
 
 env = dict(os.environ)
 env.pop('_MEIPASS2', None)
+env['LOCALAPPDATA'] = TESTHOME        # 被测程序的缓存落到工作区，不碰用户真实数据
 cmd = [sys.executable, target] if target.lower().endswith('.py') else [target]
 p = subprocess.Popen(cmd + ['--api-server', str(port)], env=env,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
