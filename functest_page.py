@@ -328,6 +328,46 @@ def run_all(cdp, url, vw, vh):
           and keep.get('start') is True and keep.get('tracks') == [True, False, False, False],
           '重开后=%r' % (keep,))
 
+    # ---------- 7.5 桌面版专属开关（打桩 fetch 假装自己在 exe 里） ----------
+    cdp.ev('''(function(){
+      window.__realFetch = window.fetch;
+      window.SQZY_API = 'http://127.0.0.1:9';
+      window.fetch = function(){ return Promise.resolve({
+        json: function(){ return Promise.resolve({ok:true, state:{
+          always_on_top:true, close_mode:'exit', autostart:true}}); } }); };
+      document.querySelectorAll(".sysToast").forEach(function(e){ e.remove(); });
+      window.winInit();
+    })()''')
+    time.sleep(0.5)
+    desk = cdp.ev('(function(){return {'
+                  'sec:getComputedStyle(document.getElementById("winSec")).display,'
+                  'auto:document.getElementById("setAuto").checked,'
+                  'top:document.getElementById("setTop").checked,'
+                  'tray:document.getElementById("setCloseTray").checked,'
+                  'startup:window.winCtl.startup,'
+                  'btn:(document.getElementById("topBtn")||{}).textContent};})()')
+    check('桌面版才显示「窗口」分区（含开机自启动）',
+          desk.get('sec') != 'none' and desk.get('startup') is True, '桌面区块=%r' % (desk,))
+    check('桌面状态回显：自启动 / 置顶 / 直接退出',
+          desk.get('auto') is True and desk.get('top') is True and desk.get('tray') is False,
+          '回显=%r' % (desk,))
+    check('置顶按钮显示「已置顶」', (desk.get('btn') or '').strip() == '已置顶',
+          '按钮文字=%r' % desk.get('btn'))
+    cdp.ev('document.getElementById("setAuto").click()')
+    time.sleep(0.5)
+    after = cdp.ev('(function(){return {checked:document.getElementById("setAuto").checked,'
+                   'toast:document.querySelectorAll(".sysToast").length,'
+                   'txt:(document.querySelector(".sysToast b")||{}).textContent};})()')
+    check('exe 说没关掉就如实回显 + 提示（不假装成功）',
+          after.get('checked') is True and after.get('toast', 0) > 0, '回显=%r' % (after,))
+    print('    · 提示原文: %s' % (after.get('txt') or ''))
+    cdp.ev('(function(){window.fetch = window.__realFetch; delete window.SQZY_API; window.winInit();})()')
+    time.sleep(0.5)
+    back = cdp.ev('(function(){return {ok:window.winCtl.ok,'
+                  'sec:getComputedStyle(document.getElementById("winSec")).display};})()')
+    check('回到网页版后「窗口」分区又藏起来', back.get('ok') is False and back.get('sec') == 'none',
+          '回退后=%r' % (back,))
+
     # ---------- 8. 通知判定（假时钟，可复现） ----------
     def arm_clock(hh, mi, day=21):
         """把页面里的 Date 换成假时钟，并清掉磁盘上的去重表；返回后必须自己再设一遍规则
