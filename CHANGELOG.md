@@ -36,7 +36,13 @@
   自启动放行路径 —— 国产系统只关电池优化仍会被清后台。
 - 【低】`program.txt` 增加 exe/apk 直链、sha256 和字节数（新增 `make_program_txt.py`，
   直接从本地发行包算出来），页面据此显示「一键更新」并做完整性校验。
-- 【发布流程】GitHub 镜像同步频率从 6 小时改成 30 分钟，减少网页版检查更新走镜像的滞后。
+- 【发布流程，未做成】原计划把 GitHub 镜像同步从 6 小时缩短到 30 分钟（网页版检查更新要走镜像），
+  但一改就踩到 GitHub 的硬限制：**Actions 自带的 `GITHUB_TOKEN` 没有 `workflow` 权限**，
+  被推的历史里只要有提交动过 `.github/workflows/**`，GitHub 就整体拒收，双向同步当场停摆
+  （`refusing to allow a GitHub App to create or update workflow ... without workflows permission`）。
+  已用 PR #16 把该文件恢复成与 GitHub 逐字节一致的版本，同步恢复（工作流 run 已 success）。
+  **频率维持 6 小时**；这条坑写进了 README 的「GitHub 镜像」一节。要真改这个文件，
+  得用带 `workflow` 权限的令牌分别推两边。
 
 ---
 
