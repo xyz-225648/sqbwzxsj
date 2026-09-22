@@ -31,6 +31,9 @@ import webview
 
 HTML_NAME = '宿迁职业技术学院作息时间表.html'
 APP_TITLE = '宿迁职业技术学院作息时间表'
+# 桌面壳自己的版本号：必须和页面里的 APP_VERSION、安卓 versionName 一致。
+# 页面拿它跟仓库里的 program.txt 比，用来发现「网页是最新的、但程序本体老了」。
+SHELL_VERSION = 'v2.1.1'
 WEBVIEW2_GUID = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
 
 UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/'
@@ -143,6 +146,24 @@ def _try_base(base):
         return html, remote_ver
     except Exception:
         return None, None
+
+
+def fetch_program():
+    """程序本体（exe/apk）当前发布的版本：仓库里的 program.txt。
+    网页能热更新，程序本体不能 —— 这个文件就是用来提醒用户「去下新版」的。"""
+    if not UPDATE_BASE:
+        return None
+    for base in base_candidates():
+        for attempt in range(2):
+            try:
+                txt = http_text(base + 'program.txt?t=%d' % int(time.time()))
+                m = re.search(r'\{.*\}', txt, re.S)
+                if m:
+                    return json.loads(m.group(0))
+            except Exception as exc:
+                api_log('program 第%d次失败 %r' % (attempt + 1, exc), 'warn')
+                time.sleep(1)
+    return None
 
 
 def check_update():
@@ -351,7 +372,23 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
             st['autostart'] = get_autostart()      # 页面拿它决定开关的勾选状态
             return self._reply({'ok': True, 'state': st})
         if u.path == '/ping':
-            return self._reply({'ok': True, 'native': True, 'name': APP_TITLE})
+            return self._reply({'ok': True, 'native': True, 'name': APP_TITLE,
+                                'shell': SHELL_VERSION})
+        if u.path == '/version':
+            # 页面用它判断「程序本体要不要更新」（网页自己能热更新，exe 不能）
+            return self._reply({'ok': True, 'kind': 'exe', 'shell': SHELL_VERSION})
+        if u.path == '/open':
+            url = q.get('url', [''])[0]
+            if url.startswith('https://gitee.com/') or url.startswith('https://github.com/'):
+                try:
+                    # WebView2 里点外链不会自动走系统浏览器，交给壳来开
+                    os.startfile(url)
+                    api_log('已在系统浏览器打开 %s' % url)
+                    return self._reply({'ok': True})
+                except Exception as exc:
+                    api_log('打开外链失败 %r' % (exc,), 'warn')
+                    return self._reply({'ok': False, 'err': str(exc)[:120]})
+            return self._reply({'ok': False, 'err': '只允许 gitee.com / github.com 的链接'})
         if u.path == '/quit':
             self._reply({'ok': True})
             threading.Thread(target=self.server.shutdown, daemon=True).start()
@@ -375,7 +412,7 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
                     if info:
                         break
             api_log('latest -> %r' % (info,))
-            return self._reply({'ok': bool(info), 'latest': info})
+            return self._reply({'ok': bool(info), 'latest': info, 'program': fetch_program()})
         if u.path == '/notify':
             title = q.get('title', [''])[0][:80]
             body = q.get('body', [''])[0][:180]
