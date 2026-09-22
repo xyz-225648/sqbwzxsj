@@ -95,6 +95,17 @@ def main():
         say('拉取 GitHub 失败：' + out.strip()[-400:])
         return 1
 
+    # 先自检反向推送用的令牌：dry-run 一次，既不改动任何东西，又能证明
+    # 「GitHub 上的改动可以推回 Gitee」这条路是通的（日志里能直接看到）
+    gp = gitee_push_url()
+    if gp:
+        rc, out = git('push', '--dry-run', gp,
+                      'refs/remotes/gitee/%s:refs/heads/%s' % (BRANCH, BRANCH))
+        say('%s Gitee 令牌自检（dry-run 推送）：%s'
+            % ('✓' if rc == 0 else '✗', '通过' if rc == 0 else out.strip()[-200:]))
+    else:
+        say('· 未配置 GITEE_TOKEN：本次只做 Gitee → GitHub 单向')
+
     g, h = sha_of('refs/remotes/gitee/' + BRANCH), sha_of('refs/remotes/origin/' + BRANCH)
     say('Gitee  %s = %s' % (BRANCH, (g or '无')[:10]))
     say('GitHub %s = %s' % (BRANCH, (h or '无')[:10]))
