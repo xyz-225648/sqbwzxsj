@@ -2,7 +2,7 @@
 
 四个学院（信息设计 / 信息基础 / 通识教育 / 女子教育）的一日作息时间轴，**Windows 桌面版 / 安卓手机版 / 浏览器网页版** 三端通用。
 
-当前版本：**v2.1.3**
+当前版本：**v2.2.1**
 
 ## 下载使用
 
@@ -14,7 +14,13 @@
 | **安卓手机** | 宿迁职业技术学院作息时间表.apk | 允许「安装未知来源应用」后安装 |
 | **浏览器** | index.html（仓库根目录） | 任意浏览器直接打开 |
 
-> 仓库里只放源码、网页和自检脚本；体积大的 exe / apk 只放在发行版附件里，免得每次 clone 都要拖下十几 MB 的二进制。
+> 手机用户优先用页面里的「**一键下载安装包**」：应用内走系统下载器、浏览器走带 CORS 的镜像，
+> 两条路都会存成真正的 `.apk`。只有在 gitee 发行版页面**直接点附件**时才会下到 `.apk.zip`
+> （原因和绕法见 [常见问题](#常见问题)）。
+
+> 仓库里放源码、网页、自检脚本，外加**每个版本一份 apk 副本**（`apk/sqzy-timetable-<tag>.apk`，约 120 KB）——
+> 它既是「浏览器也能下到 `.apk`」的镜像源（见下面常见问题），也是别人 clone 后能直接拿到安装包的备份。
+> 体积大的 exe（十几 MB）仍然只放在发行版附件里。
 
 ## 功能
 
@@ -102,6 +108,10 @@
 | set-update-url.sh | 给二次开发者用：改自动更新地址并重新打包 |
 | check_live.py | 发布之后核验线上：网页、版本号、两个下载链接跟本地是否一致 |
 | gitee_repo.py | 维护者工具：仓库文件 / 分支 / Pull Request / Issue / 发行版，一条命令管一种动作（令牌读本机 .gitee_token，不会进仓库） |
+| gh_release.py | 维护者工具：在 GitHub 镜像仓库建/更新同名发行版并上传附件（附件名用 ASCII，GitHub 会把中文名削成 default.exe） |
+| gh_secret.py | 维护者工具：往 GitHub 仓库写 Actions secret（自己实现的 sealed box，不依赖 PyNaCl），用于镜像同步的 GITEE_TOKEN |
+| mirror_sync.py | 在 GitHub Actions 里跑的镜像同步：谁领先推给谁，两边都有新提交就自动合并，合不干净就停下不动 |
+| github_mirror.py | 本机的备用镜像（直接从 Gitee 拉全量再推 GitHub）；本机到 github.com 不通时用它没戏，平时由 Actions 负责 |
 | 自动更新使用说明.md | 自动更新的原理和日常操作 |
 | CHANGELOG.md | 每个版本改了什么 |
 
@@ -113,8 +123,8 @@
 |---|---|
 | check_page.py | 页面内联脚本语法检查（node --check） |
 | smoke_page.py | 无头浏览器渲染冒烟：三档视口 + 安卓 UA，抓未捕获异常和「功能没渲染出来」 |
-| functest_page.py | 无头浏览器 + CDP **交互遍历**：悬停/钉住、设置保存、通知判定、更新弹窗、缩放、防调试… |
-| selftest_api.py | 桌面版本地接口自检：/ping /state /notify /latest /quit |
+| functest_page.py | 无头浏览器 + CDP **交互遍历**（当前 **80 项**）：悬停/钉住、设置保存、通知判定、更新弹窗、缩放、防调试，以及安装包下载路径（镜像线路齐全、浏览器路径文件名必须以 `.apk` 结尾、blob 真拿到字节、有原生桥时交给系统下载器） |
+| selftest_api.py | 桌面版本地接口自检：/ping /state /notify /latest /quit，外加一键更新的 `/download`（无令牌 403、非 gitee 地址被拒）与 `/apply`（源码模式必须拒绝自我替换）、`sqzy:` 协议指向本程序 |
 | functest_app.py | 桌面外壳端到端：真的开一个窗口，验单实例、托盘、置顶、退出 |
 | check_live.py | 发布**之后**跑：核验线上网页 / version.txt / exe、apk 下载链接与本地一致 |
 
@@ -122,6 +132,37 @@
 python functest_app.py                        # 测源码
 python functest_app.py --exe 宿迁职业技术学院作息时间表.exe   # 测打包好的 exe
 ```
+
+## 常见问题
+
+**手机从 gitee 下的安装包变成了 `.apk.zip`？**
+
+gitee 附件的 CDN 对 `.apk` 固定返回 `Content-Type: application/zip`（实测：同一发行版的 `.exe` 却是
+`application/vnd.microsoft.portable-executable`；上传时指定 Content-Type 也没用），手机浏览器会按 MIME
+补后缀。**页面里的下载按钮已经绕开了它**：浏览器里走 jsdelivr / ghproxy 这些带 CORS 的代理，页面拿到字节后
+自己命名保存，所以一定是 `.apk`；应用内则走系统下载器（显式文件名）。只有直接在 gitee 发行版页面点附件时
+才会碰上，把结尾的 `.zip` 去掉就能装 —— 文件本身是完整的。
+
+**「检查更新」总说失败 / 一直没提示有新版本？**
+
+三端读版本的方式不同：桌面版问 exe 的本地接口；安卓版走原生桥直接读 gitee（不受 MIME / 跨域影响）；
+**网页版走 GitHub 镜像**（`raw.githubusercontent.com` 带 CORS 头）。镜像每 6 小时同步一次，
+所以刚发布的版本，网页版最多滞后 6 小时才发现。
+
+**点了通知没反应？**
+
+Windows：第一次发通知时会注册 `sqzy:` 协议；若被安全软件拦过或 exe 换了位置，去「设置 → 关于 →
+检查更新」触发一次即可重新注册。安卓：确认「设置 → 通知 → 本应用」没被关掉；国产系统还要在
+「自启动 / 后台白名单」里放行，否则息屏后提醒会被一起冻结（设置面板里有对应机型路径）。
+
+**设置会不会因为重启而丢？**
+
+不会。设置同时写在页面本地存储和 exe 的 `settings.json`（`/config` 接口）里，启动时以壳里的那份为准，
+所以快速重启、换端口都不会回到默认值。
+
+**为什么仓库里要放一份 apk 副本？**
+
+为了让浏览器也能下到真正的 `.apk`（见上面第一条），约 120 KB/版；exe 仍然只在发行版附件里。
 
 ## 开发流程（issue → 分支 → Pull Request → 合并）
 
