@@ -176,7 +176,7 @@ Windows：第一次发通知时会注册 `sqzy:` 协议；若被安全软件拦�
    再 `python gitee_repo.py pr new fix/xxx "<标题>" <说明.md>`（说明里写清改了什么、
    怎么验证的，并关联 issue 编号）。
 5. **过门槛 + 合并**：本仓库开了「合并前必须通过审查 / 测试」，所以顺序是
-   `python gitee_repo.py pr approve <编号>`（一次点掉「审查通过」「测试通过」）→
+   `python gitee_repo.py pr approve <编号>`（一次点掉「审查通过」「测试通过」）->
    `python gitee_repo.py pr merge <编号>`。合并后在 PR 页面能看到 diff、审查与测试记录。
 6. **回 issue**：`python gitee_repo.py issue comment <编号> "<版本 + 结论>"`，
    然后 `python gitee_repo.py issue close <编号>`。
@@ -195,7 +195,6 @@ Windows：第一次发通知时会注册 `sqzy:` 协议；若被安全软件拦�
 
 仓库里有 `.gitee/PULL_REQUEST_TEMPLATE.md`：改了什么 / 为什么（关联 issue）/ 怎么验证（跑过哪些闸门、结果如何）
 —— 三项都要如实填，不跑闸门的 PR 不合并。
-
 
 ## 本地接口与安全
 
@@ -219,6 +218,7 @@ Windows：第一次发通知时会注册 `sqzy:` 协议；若被安全软件拦�
 - **发布顺序**：合并页面 PR → **立刻**建同名 tag / 发行版 → 上传附件。
   这样 tag 里的源码与附件是同一版，下载链接也不会指向还不存在的 tag（两个窗口期都踩过）
 - 发布也走 PR：见下面「开发流程 → 发布也走 PR」
+
 ## GitHub 镜像
 
 同一份仓库在 GitHub 上也有一份：https://github.com/xyz-225648/sqbwzxsj
@@ -240,6 +240,7 @@ Windows：第一次发通知时会注册 `sqzy:` 协议；若被安全软件拦�
   （`refusing to allow a GitHub App to create or update workflow ... without workflows permission`），
   双向同步直接停摆 —— v2.2.0 发布时就踩了这一次（想把同步频率从 6 小时改成 30 分钟），
   最后只能把该文件恢复成与 GitHub 完全一致才恢复同步。真要改这个文件，得两边用**带 `workflow` 权限**的令牌分别推。
+
 ### 在 GitHub 上开发
 
 1. 照常在 GitHub 上开分支、提 PR（讨论、评审都留在 GitHub）
