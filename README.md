@@ -119,6 +119,22 @@ publish.sh 会把它复制成 index.html；仓库里只保留一份，避免重�
 发布（换 exe / apk）依旧按上面的「自检脚本 + 发行版」流程：闸门全过 → 打 tag 发发行版 →
 原地替换附件，并把改动写进 CHANGELOG.md。
 
+## GitHub 镜像
+
+同一份仓库在 GitHub 上也有一份：https://github.com/xyz-225648/sqbwzxsj
+
+两边**双向同步**，谁领先就推给谁，规则写死在 `.github/workflows/mirror-sync.yml` 里：
+
+| 情况 | 动作 |
+|---|---|
+| 两边相同 | 什么都不做（只对齐 tag） |
+| GitHub 领先（在 GitHub 合并了 PR） | 推给 Gitee |
+| Gitee 领先（在 Gitee 合并了 PR） | 推给 GitHub |
+| 两边各有新提交 | 先自动合并；**合不干净就报错停下，谁都不动** |
+
+- 触发时机：每 6 小时一次 / GitHub 上 push 到 master（合并 PR 后立刻）/ 也可以在工作流页面手动点
+- 往 Gitee 推需要 GitHub 仓库里的 Actions secret `GITEE_TOKEN`（Gitee 私人令牌，勾 projects 权限）；没配的话只有 Gitee → GitHub 单向可用，反向那步会明确报错而不是假装成功
+- 主仓库仍然是 Gitee：产品改动请按上面的「开发流程」在 Gitee 走 PR；在 GitHub 上开发也可以，合并后会由这个工作流推回 Gitee
 ## 许可
 
 MIT，见 [LICENSE](LICENSE)。
