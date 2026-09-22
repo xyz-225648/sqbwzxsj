@@ -3,6 +3,41 @@
 版本号规范：V主.次.补丁 —— **主版本**＝架构改动 / 重大功能，**次版本**＝新功能与界面优化，
 **补丁号**＝Bug 修复与微小调整（不新增功能）。
 
+## v2.2.0
+
+### 下载
+
+| 平台 | 文件 | 说明 |
+|---|---|---|
+| **Windows** | 宿迁职业技术学院作息时间表.exe | 双击即用，免安装（需 WebView2，Win11 自带） |
+| **安卓手机** | 宿迁职业技术学院作息时间表.apk | 允许「安装未知来源应用」后安装 |
+| **浏览器** | index.html | 任意浏览器直接打开 |
+
+### 新增与修复（来自 issue IKHWKA）
+
+- 【高】安卓版「检查更新」必失败：gitee 的原始文件一律按 `text/plain` +
+  `X-Content-Type-Options: nosniff` 返回，而且不带 CORS 头 —— `<script src=version.txt>` 会被
+  Chromium 拒绝执行，`fetch` 又被跨域挡住，两条路都不通。现在按形态分三条路：桌面版走 exe 的本地
+  接口 `/latest`；安卓版走原生桥 `fetchUrl`（HttpURLConnection 不看 MIME、不受 CORS 限制）；
+  网页版 fetch GitHub 镜像（`raw.githubusercontent.com` 带 `Access-Control-Allow-Origin: *`）。
+  三端都能正常检查更新，并且不再靠加载远程脚本。
+- 【高】点通知打不开软件：安卓通知原来挂的是空 PendingIntent，点了没反应，现在补上
+  `setContentIntent`；Windows 的 toast 补上 `activationType="protocol" launch="sqzy:open"`，
+  并在启动时把 `sqzy:` 协议注册到 `HKCU\Software\Classes\sqzy`（只写当前用户，不用管理员）。
+  点通知就拉起本程序；已经开着（哪怕藏在托盘里）时只把已有窗口叫到前台，不会再开第二个。
+- 【中】不能一键后台下载安装：安卓改用 DownloadManager 后台下载（通知栏有进度，下完点通知安装）；
+  Windows 新增「一键更新」——页面把 `program.txt` 里的直链和 sha256 交给 exe 的 `/download`，
+  下载完先算 sha256，对不上就拒绝替换；再由 `/apply` 写一个替换脚本，等进程退出后用 `move`
+  覆盖自身并自动重启（PyInstaller onefile 运行中不能覆盖自己）。课表内容和设置都不受影响。
+  这两个接口都要令牌，只有本应用页面能调用。
+- 【中】APK 不后台常驻：新增前台服务 `KeepAliveService`（`IMPORTANCE_MIN`，状态栏一条通知）
+  和 `BootReceiver`（开机自启）；设置面板新增「后台运行（仅安卓手机版）」：后台常驻开关、
+  一键申请「忽略电池优化」、打开应用设置，并按小米 / 华为·荣耀 / OPPO·一加 / vivo 分别写清
+  自启动放行路径 —— 国产系统只关电池优化仍会被清后台。
+- 【低】`program.txt` 增加 exe/apk 直链、sha256 和字节数（新增 `make_program_txt.py`，
+  直接从本地发行包算出来），页面据此显示「一键更新」并做完整性校验。
+- 【发布流程】GitHub 镜像同步频率从 6 小时改成 30 分钟，减少网页版检查更新走镜像的滞后。
+
 ---
 
 ## v2.1.3

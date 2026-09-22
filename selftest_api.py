@@ -158,6 +158,47 @@ try:
         if '"v": "v' not in body:
             rc = 1
 
+        # 通知可点击（issue IKHWKA #2）：发通知前要注册 sqzy: 协议，
+        # 否则 Windows 点了通知不知道该拉起谁（点了没反应的根源）
+        if sys.platform.startswith('win'):
+            try:
+                import winreg
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                    r'Software\Classes\sqzy\shell\open\command') as k:
+                    cmdline = winreg.QueryValueEx(k, '')[0]
+                print('  sqzy: 协议 → %s' % cmdline[:110])
+                if os.path.basename(target).lower() not in cmdline.lower():
+                    print('    ✗ 协议没指向本程序（%s）→ 点了通知会拉起别的东西'
+                          % os.path.basename(target)); rc = 1
+            except FileNotFoundError:
+                print('    ✗ 没注册 sqzy: 协议（Windows 上点通知会没反应）'); rc = 1
+            except Exception as exc:
+                print('    · 协议检查跳过：%r' % (exc,))
+
+        # 一键更新（issue IKHWKA #3）：只有页面拿着令牌才能让 exe 下载/替换自己
+        for label, path in (('/download', '/download?url=https%3A%2F%2Fgitee.com%2Fx%2Fy.exe'),
+                            ('/apply', '/apply')):
+            try:
+                st2, body2 = call(path)
+            except urllib.error.HTTPError as e:
+                st2, body2 = e.code, e.read().decode('utf-8', 'replace')[:70]
+            print('   %-10s 无令牌 → HTTP %s %s' % (label, st2, body2[:44]))
+            if st2 != 403:
+                print('    ✗ 居然没拒绝（任意本机网页都能让 exe 换掉自己）'); rc = 1
+
+        st, body = call('/download', k=token, url='https://example.com/x.exe')
+        print('  /download  非 gitee 地址 → %s' % body[:80])
+        if '"ok": true' in body:
+            print('    ✗ 非 gitee 地址也放行了'); rc = 1
+        elif 'gitee' not in body:
+            print('    ✗ 没说明拒绝原因'); rc = 1
+
+        st, body = call('/apply', k=token)
+        print('  /apply     %s → %s' % ('源码模式（必须明确拒绝）' if target.lower().endswith('.py')
+                                         else 'exe，还没下载过新版', body[:90]))
+        if '"ok": true' in body:
+            print('    ✗ 源码模式居然同意替换自己'); rc = 1
+
         st, body = call('/quit', k=token)
         print('  /quit      HTTP %d  %s' % (st, body))
 finally:

@@ -220,6 +220,18 @@ def run_all(cdp, url, vw, vh):
           '没切回来')
 
     # ---------- 3. 悬停预览轴 / 钉住 ----------
+    # 页面版本刚升、线上 version.txt 还没发出去时，页面会**按设计**自动弹一层「有新版本」
+    # （带滚动锁，会把后面所有真实交互挡住）。这不是缺陷，但会让交互测试不可复现，
+    # 所以先把自动弹出来的关掉，并断言关干净了。
+    shut = cdp.ev('(function(){var n=[];document.querySelectorAll(".sheet.on").forEach(function(s){'
+                  'var x=s.querySelector(".sheet-x");if(x){x.click();n.push(s.id);}});return n;})()')
+    time.sleep(0.5)
+    if shut:
+        print('    · 先关掉页面自动弹出的提示层 %r（线上版本数据比本地页面旧时会有）' % (shut,))
+    check('交互前没有残留弹层 / 滚动锁',
+          cdp.ev('document.querySelectorAll(".sheet.on").length') == 0
+          and cdp.ev('document.documentElement.classList.contains("sheet-lock")') is False,
+          '还有弹层或滚动锁')
     cdp.ev('window.scrollTo(0,0)')
     cdp.ev('document.getElementById("gGrid").scrollIntoView({block:"center"})')
     time.sleep(0.5)
@@ -228,6 +240,15 @@ def run_all(cdp, url, vw, vh):
                  'var b=ar.getBoundingClientRect();'
                  'return {x:b.left+b.width*0.45, y:Math.min(' + str(vh - 60) + ', b.top+b.height*0.5)};})()')
     print('    · 悬停落点 x=%.0f y=%.0f' % (box['x'], box['y']))
+    diag = cdp.ev('(function(){var ar=document.querySelectorAll("#gGrid .g-lane .g-area")[1];'
+                  'var b=ar.getBoundingClientRect();var x=b.left+b.width*0.45;'
+                  'var y=Math.min(' + str(vh - 60) + ', b.top+b.height*0.5);'
+                  'var el=document.elementFromPoint(x,y);'
+                  'return {hit:el?(el.id||el.className||el.tagName):null,'
+                  'inGrid:!!(el&&el.closest&&el.closest("#gGrid"))};})()')
+    print('    · 悬停点命中 %r' % (diag,))
+    check('悬停点确实落在时间轴上（没被弹层挡住）',
+          (diag or {}).get('inGrid') is True, '落点上不是时间轴：%r' % (diag,))
     cdp.hover(box['x'], box['y'])
     time.sleep(0.4)
     check('悬停出现预览竖线',
@@ -259,6 +280,9 @@ def run_all(cdp, url, vw, vh):
     # ---------- 5. 回到顶部 ----------
     cdp.ev('window.scrollTo(0, 1200)')
     time.sleep(0.6)
+    print('    · 滚动诊断 %r' % (cdp.ev('({y:window.pageYOffset,vh:window.innerHeight,'
+                                       'sh:document.documentElement.scrollHeight,'
+                                       'cls:document.documentElement.className})'),))
     check('滚动后「回到顶部」按钮出现',
           bools(cdp, 'document.getElementById("toTop").classList.contains("on")'), '按钮没亮')
     cdp.ev('document.getElementById("toTop").click()')
@@ -311,6 +335,9 @@ def run_all(cdp, url, vw, vh):
           'tracks=%r' % parsed.get('tracks'))
     cdp.ev('document.getElementById("setClose").click()')
     time.sleep(0.5)
+    print('    · 关面板诊断 %r' % (cdp.ev('({cls:document.documentElement.className,'
+                                       'on:document.getElementById("setSheet").className,'
+                                       'y:window.pageYOffset})'),))
     check('关面板后解除滚动锁',
           not bools(cdp, 'document.documentElement.classList.contains("sheet-lock")'), 'sheet-lock 还在')
     y2 = cdp.ev('window.pageYOffset')
@@ -473,6 +500,41 @@ def run_all(cdp, url, vw, vh):
               '补发键=%r（应为 %s）' % (late, want2))
         check('换天后旧的去重记录被清掉', want not in late, '还留着昨天的键：%r' % (late,))
         cdp.ev('(function(){ if (window.__RealDate) window.Date = window.__RealDate; })()')
+
+    # ---------- 9.4 检查更新在网页版/安卓版真的能读到版本（issue IKHWKA #1） ----------
+    cdp.ev('document.getElementById("aboutNote").textContent = ""')
+    cdp.ev('window.applyUpdateInfo(null, false)')
+    cdp.ev('window.checkAppUpdate(true)')
+    time.sleep(8)
+    note = cdp.ev('document.getElementById("aboutNote").textContent')
+    check('网页版能读到版本信息（不再被 nosniff/CORS 卡死）', bool((note or '').strip()),
+          '关于区还是空的 —— 说明版本文件没读到（可能又用回 <script src> 了）')
+    print('    · 关于区原文: %s' % (note or '')[:64])
+    check('页面没有用 <script src> 加载 version/program 文件',
+          bools(cdp, 'document.querySelectorAll("script[src*=\'version\'],script[src*=\'program\']").length === 0'),
+          '又出现 script src 了')
+
+    # 安卓路径：走原生桥 fetchUrl（不受 MIME/CORS 限制）
+    cdp.ev('''(function(){
+      window.__got = null;
+      window.SQZY_ANDROID = {
+        version: function(){ return '2.1.0'; },
+        fetchUrl: function(u){ window.__got = u;
+          return 'window.SQZY_LATEST={"v":"v9.9.9","h":"x","t":"2026-09-22 20:00"};'; }
+      };
+      document.getElementById("aboutNote").textContent = "";
+      window.applyUpdateInfo(null, false);
+      window.checkAppUpdate(false);
+    })()''')
+    time.sleep(1.5)
+    via = cdp.ev('(function(){return {url: window.__got,'
+                 ' note: document.getElementById("aboutNote").textContent,'
+                 ' latest: !!window.latestInfo};})()')
+    check('安卓版走原生桥读版本（命令行里带 gitee raw 地址）',
+          bool(via.get('url')) and 'gitee.com' in (via.get('url') or ''),
+          '没走桥：%r' % (via,))
+    check('桥回来的版本被页面采纳', via.get('latest') is True, '页面没拿到版本：%r' % (via,))
+    cdp.ev('delete window.SQZY_ANDROID')
 
     # ---------- 9. 更新弹窗 ----------
     cdp.ev('window.applyUpdateInfo({v:"v9.9.9", t:"2026-01-01 00:00"}, true)')

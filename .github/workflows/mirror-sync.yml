@@ -6,7 +6,7 @@ name: Gitee ⇄ GitHub 双向同步
 
 on:
   schedule:
-    - cron: '0 */6 * * *'        # 每 6 小时自动对一次
+    - cron: '*/30 * * * *'       # 每 30 分钟对一次（网页版检查更新走 GitHub 镜像，别拖太久）
   workflow_dispatch:
     inputs:
       force_from_gitee:

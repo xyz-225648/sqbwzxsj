@@ -76,7 +76,9 @@ m = re.search(r"var RELEASE_TAG = '([^']+)'", s)
 print(m.group(1) if m else 'v0')
 PYEOF
 )
-python -c "import io,json,sys; io.open('$OUT/program.txt','w',encoding='utf-8',newline=chr(10)).write('window.SQZY_PROGRAM='+json.dumps({'exe':sys.argv[1],'apk':sys.argv[1],'tag':sys.argv[2],'t':sys.argv[3]},ensure_ascii=False)+';'+chr(10))" "$VER" "$TAG" "$STAMP"
+# 直链和 sha256 由 make_program_txt.py 从本地发行包算出来（exe 版一键更新要用，
+# 校验不过就拒绝替换）。发行包还没重新打包时会提示退回手动下载。
+python make_program_txt.py "$HTML" "$OUT" "$VER" "$STAMP"
 echo "   program.txt  $(cat "$OUT/program.txt")"
 
 echo "================================================"

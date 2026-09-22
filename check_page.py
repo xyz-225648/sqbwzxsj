@@ -40,9 +40,20 @@ for i, code in enumerate(blocks):
         os.remove(tmp)
 
 # 顺带检查几个关键元素是否还在（防止误删功能）
-for key in ['initSettings', 'checkNotify', 'setTracks', 'aboutCheck', 'SQZY_LATEST']:
+for key in ['initSettings', 'checkNotify', 'setTracks', 'aboutCheck',
+            'readRemoteText', 'parseVerText', 'applyProgramInfo', 'apiQs',
+            'shellAssetUrl', 'andBatt', 'setKeep', 'canAuto']:
     if key not in src:
         print('  ⚠ 页面里找不到关键标识: %s' % key)
+
+# 回归护栏：版本信息**不能**再用 <script src> 加载 ——
+# gitee raw 是 text/plain + X-Content-Type-Options: nosniff，Chromium 会拒绝执行，
+# 安卓版/网页版的「检查更新」就是因此永远失败（issue IKHWKA #1）。
+bad = re.findall(r'<script[^>]*src=[^>]*(?:version|program)\.txt', src)
+if bad:
+    print('  ✗ 页面又用 <script src> 加载 version/program.txt 了：%s' % bad[:2])
+    print('    这条路在 gitee raw 下必然失败，请用 readRemoteText()')
+    fail += 1
 
 print('  self-check: %s' % ('PASS' if fail == 0 else 'FAIL'))
 sys.exit(1 if fail else 0)
