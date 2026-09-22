@@ -1114,12 +1114,12 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.0.1';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.1.0';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 安卓安装包挂在哪个发行版 tag 下。故意固定在 v1.0 不动：tag 一换，
    老页面里写死的下载链接就会 404；附件内容每次发布时原地替换，链接永远有效。 */
-var RELEASE_TAG = 'v2.0.1';
+var RELEASE_TAG = 'v2.1.0';
 var latestInfo = null;
 var notifyCfg = { on:true, before:true, next:true, start:false, end:false, min:5,
                   tracks:[true,true,true,true] };
@@ -1478,7 +1478,10 @@ function initSettings(){
           '<span style="font-size:11px;color:#94a3b8;margin-left:6px">Ctrl+T</span></label></div>' +
         '<div class="setrow"><label><input type="checkbox" id="setCloseTray">点右上角 ✕ 后隐藏到托盘' +
           '<span style="font-size:11px;color:#94a3b8;margin-left:6px">不勾＝直接退出</span></label></div>' +
-        '<div class="setnote">隐藏到托盘后程序仍在后台跑，课表提醒照常发；双击托盘图标恢复窗口，右键托盘图标可退出。</div>' +
+        '<div class="setrow"><label><input type="checkbox" id="setAuto">开机自启动' +
+          '<span style="font-size:11px;color:#94a3b8;margin-left:6px">登录后自动在托盘运行</span></label></div>' +
+        '<div class="setnote">隐藏到托盘后程序仍在后台跑，课表提醒照常发；双击托盘图标恢复窗口，右键托盘图标可退出。' +
+        '开机自启动只写当前用户的启动项，不用管理员权限，取消勾选即刻移除。</div>' +
       '</div>' +
       '<button class="settest" id="setTest" type="button">发一条测试通知</button>' +
       '<div class="setnote" id="setNote"></div>' +
@@ -1526,6 +1529,8 @@ function initSettings(){
   if (topBox) topBox.addEventListener('change', function(){ winSetTop(topBox.checked); });
   var trayBox = document.getElementById('setCloseTray');
   if (trayBox) trayBox.addEventListener('change', function(){ winSetClose(trayBox.checked ? 'tray' : 'exit'); });
+  var autoBox = document.getElementById('setAuto');
+  if (autoBox) autoBox.addEventListener('change', function(){ winSetStartup(autoBox.checked); });
 
   var host = document.getElementById('setTracks');
   if (host) host.addEventListener('click', function(e){
@@ -1658,7 +1663,7 @@ function relayout(){
 /* 只有 Windows 桌面版能做这两件事（网页版/手机版没有窗口权限）。
    真相在 exe 那侧的状态文件里（关掉重开也记得），localStorage 只当镜像。 */
 var WIN_KEY = 'sqzy-window';
-var winCtl = { ok:false, top:false, close:'tray' };
+var winCtl = { ok:false, top:false, close:'tray', startup:false };
 
 function winFetch(q, cb){
   var base = apiBase();
@@ -1675,30 +1680,41 @@ function winApplyUI(){
   var box = document.getElementById('winSec');
   var topBox = document.getElementById('setTop');
   var trayBox = document.getElementById('setCloseTray');
+  var autoBox = document.getElementById('setAuto');
   var btn = document.getElementById('topBtn');
   if (sec) sec.style.display = winCtl.ok ? '' : 'none';
   if (box) box.style.display = winCtl.ok ? '' : 'none';
   if (topBox) topBox.checked = !!winCtl.top;
   if (trayBox) trayBox.checked = (winCtl.close !== 'exit');
+  if (autoBox) autoBox.checked = !!winCtl.startup;
   if (btn){
     btn.style.display = winCtl.ok ? '' : 'none';
     btn.textContent = winCtl.top ? '已置顶' : '置顶';
     btn.title = winCtl.top ? '点击取消置顶（Ctrl+T）' : '点击让窗口总在最前（Ctrl+T）';
     if (winCtl.top) btn.classList.add('on'); else btn.classList.remove('on');
   }
-  try{ safeSet(WIN_KEY, JSON.stringify({ top: winCtl.top, close: winCtl.close })); }catch(e){}
+  try{ safeSet(WIN_KEY, JSON.stringify({ top: winCtl.top, close: winCtl.close, startup: winCtl.startup })); }catch(e){}
 }
 function winInit(){
   var mirror = null;
   try{ mirror = JSON.parse(safeGet(WIN_KEY) || 'null'); }catch(e){}
-  if (mirror && typeof mirror.top === 'boolean'){ winCtl.top = mirror.top; winCtl.close = mirror.close === 'exit' ? 'exit' : 'tray'; }
+  if (mirror && typeof mirror.top === 'boolean'){
+    winCtl.top = mirror.top; winCtl.close = mirror.close === 'exit' ? 'exit' : 'tray';
+    winCtl.startup = !!mirror.startup;
+  }
+  if (!apiBase()){
+    /* 网页版：就当没有这些开关（ok 也要归位，不能留着上一次的结论） */
+    winCtl.ok = false;
+    winApplyUI();
+    return;
+  }
   winApplyUI();
-  if (!apiBase()) return;                       /* 网页版：就当没有这些开关 */
   winFetch('', function(o){
     if (o && o.ok && o.state){                  /* 桌面版：以 exe 里的状态为准 */
       winCtl.ok = true;
       winCtl.top = !!o.state.always_on_top;
       winCtl.close = (o.state.close_mode === 'exit') ? 'exit' : 'tray';
+      winCtl.startup = !!o.state.autostart;      /* 其实由注册表说了算，问 exe 最准 */
     } else {
       winCtl.ok = false;                        /* 老版 exe 没有这个接口，别显示开关 */
     }
@@ -1712,6 +1728,18 @@ function winSetTop(v){
 function winToggleTop(){
   if (!winCtl.ok) return;
   winSetTop(!winCtl.top);
+}
+function winSetStartup(v){
+  winCtl.startup = !!v; winApplyUI();
+  /* exe 写不写得进注册表只有它知道，回来后以它的答复为准 */
+  winFetch('?startup=' + (winCtl.startup ? '1' : '0'), function(o){
+    if (o && o.ok && o.state){
+      winCtl.startup = !!o.state.autostart;
+      if (winCtl.startup !== !!v) inPageToast(winCtl.startup ? '开机自启动已开启' : '开机自启动没能开启',
+        winCtl.startup ? '下次登录 Windows 会自动在托盘运行' : '写入启动项失败，可能被安全软件拦了');
+      winApplyUI();
+    }
+  });
 }
 function winSetClose(mode){
   winCtl.close = (mode === 'exit') ? 'exit' : 'tray';
