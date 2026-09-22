@@ -109,10 +109,9 @@ publish.sh 会把它复制成 index.html；仓库里只保留一份，避免重�
 4. **提交 PR**：`python gitee_repo.py --branch=fix/xxx push <改动文件>` 把改动提上分支，
    再 `python gitee_repo.py pr new fix/xxx "<标题>" <说明.md>`（说明里写清改了什么、
    怎么验证的，并关联 issue 编号）。
-5. **审核 + 合并**：本仓库开了「合并前必须通过审查」，所以顺序是
-   `python gitee_repo.py pr approve <编号>`（相当于点「审查通过」）→
-   `python gitee_repo.py pr merge <编号>`；合并后在 PR 页面能看到 diff 与审查记录。
-   合并完顺手 `python gitee_repo.py branch rm <分支名>` 清理分支。
+5. **过门槛 + 合并**：本仓库开了「合并前必须通过审查 / 测试」，所以顺序是
+   `python gitee_repo.py pr approve <编号>`（一次点掉「审查通过」「测试通过」）→
+   `python gitee_repo.py pr merge <编号>`。合并后在 PR 页面能看到 diff、审查与测试记录。
 6. **回 issue**：`python gitee_repo.py issue comment <编号> "<版本 + 结论>"`，
    然后 `python gitee_repo.py issue close <编号>`。
 
