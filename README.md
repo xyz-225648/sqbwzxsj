@@ -103,16 +103,18 @@ publish.sh 会把它复制成 index.html；仓库里只保留一份，避免重�
 改这个仓库的代码一律走 Pull Request，不直接推 master，改动可追溯、可回滚：
 
 1. **提 issue**：说清问题或想要的功能（仓库菜单「Issues → 新建」）。
-2. **开分支**：\`python gitee_repo.py branch new fix/xxx\`
-3. **改代码 + 过闸门**：本地跑 \`bash publish.sh\` —— 页面语法 / 渲染冒烟 / 交互遍历 / 本地接口
-   四项自检全过才允许提交；桌面外壳改动另外跑 \`python functest_app.py\`。
-4. **提交 PR**：\`python gitee_repo.py --branch=fix/xxx push <改动文件>\` 把改动提上分支，
-   再 \`python gitee_repo.py pr new fix/xxx "<标题>" <说明.md>\`（说明里写清改了什么、
+2. **开分支**：`python gitee_repo.py branch new fix/xxx`
+3. **改代码 + 过闸门**：本地跑 `bash publish.sh` —— 页面语法 / 渲染冒烟 / 交互遍历 / 本地接口
+   四项自检全过才允许提交；桌面外壳改动另外跑 `python functest_app.py`。
+4. **提交 PR**：`python gitee_repo.py --branch=fix/xxx push <改动文件>` 把改动提上分支，
+   再 `python gitee_repo.py pr new fix/xxx "<标题>" <说明.md>`（说明里写清改了什么、
    怎么验证的，并关联 issue 编号）。
-5. **审核 + 合并**：在 PR 页面看改动（文件、diff、说明），确认后
-   \`python gitee_repo.py pr merge <编号>\`。
-6. **回 issue**：\`python gitee_repo.py issue comment <编号> "<版本 + 结论>"\`，
-   然后 \`python gitee_repo.py issue close <编号>\`。
+5. **审核 + 合并**：本仓库开了「合并前必须通过审查」，所以顺序是
+   `python gitee_repo.py pr approve <编号>`（相当于点「审查通过」）→
+   `python gitee_repo.py pr merge <编号>`；合并后在 PR 页面能看到 diff 与审查记录。
+   合并完顺手 `python gitee_repo.py branch rm <分支名>` 清理分支。
+6. **回 issue**：`python gitee_repo.py issue comment <编号> "<版本 + 结论>"`，
+   然后 `python gitee_repo.py issue close <编号>`。
 
 发布（换 exe / apk）依旧按上面的「自检脚本 + 发行版」流程：闸门全过 → 打 tag 发发行版 →
 原地替换附件，并把改动写进 CHANGELOG.md。
