@@ -3,6 +3,37 @@
 版本号规范：V主.次.补丁 —— **主版本**＝架构改动 / 重大功能，**次版本**＝新功能与界面优化，
 **补丁号**＝Bug 修复与微小调整（不新增功能）。
 
+## v2.2.1
+
+### 下载
+
+| 平台 | 文件 | 说明 |
+|---|---|---|
+| **Windows** | 宿迁职业技术学院作息时间表.exe | 双击即用，免安装（需 WebView2，Win11 自带） |
+| **安卓手机** | 宿迁职业技术学院作息时间表.apk | 允许「安装未知来源应用」后安装 |
+| **浏览器** | index.html | 任意浏览器直接打开 |
+
+### 修复：手机从 gitee 下到的 apk 会变成 `.apk.zip`
+
+- **根因（实测）**：gitee 附件的 CDN 对 `.apk` 固定返回 `Content-Type: application/zip` ——
+  同一个发行版里的 `.exe` 却是 `application/vnd.microsoft.portable-executable`，说明是 gitee 的
+  MIME 映射问题。我建了临时发行版做对照：同一份文件分别用
+  `application/vnd.android.package-archive` 和 `application/octet-stream` 上传，**返回的都是 zip**，
+  上传端指定 Content-Type 没用（实验完已删除）。手机浏览器按 MIME 补后缀 →
+  `宿迁职业技术学院作息时间表.apk.zip`。文件本身没坏：123752 字节，md5 与本地一致。
+- **修法**：apk 同时作为**仓库文件**提交一份（`apk/sqzy-timetable-<tag>.apk`）。页面在**浏览器里**
+  （没有原生桥）改走支持 CORS 的代理 CDN —— jsdelivr 三个域名 + ghproxy 依次回退（实测都带
+  `access-control-allow-origin: *`）—— `fetch` 成 blob 后用 `a.download` **自己指定文件名**保存。
+  文件名由页面说了算，与服务器 MIME 无关，所以浏览器也一定存成 `.apk`；拿到字节后先核对
+  `program.txt` 里的 sha256，对不上就换下一条线路。全部不通才回退到 gitee 附件，并提示
+  「若下成 `.apk.zip` 就把后缀改回 `.apk`」。
+- **新增**：应用内「把安装包分享给同学」（微信 / QQ / 蓝牙 / 隔空投送类应用）。工程不带 AndroidX，
+  所以自带了极简 `ApkProvider`（只暴露 `cacheDir/share`，`exported=false`，
+  靠 `FLAG_GRANT_READ_URI_PERMISSION` 一次性授权），分享的是本机这份安装包。
+- 应用内（有原生桥）仍然走系统 DownloadManager：显式文件名 + 正确 MIME，本来就不会被改名。
+
+---
+
 ## v2.2.0
 
 ### 下载

@@ -15,6 +15,10 @@ import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 BASES = {'exe': '宿迁职业技术学院作息时间表.exe', 'apk': '宿迁职业技术学院作息时间表.apk'}
+# apk 还会作为仓库文件提交一份：gitee 附件 CDN 对 apk 固定返回 application/zip（改不了），
+# 手机浏览器会按 MIME 改成 .apk.zip；仓库文件走支持 CORS 的代理 CDN，页面 fetch 成 blob
+# 后自己命名保存，就能存成 .apk。路径里带版本号，免得代理缓存拿到旧包。
+APK_REPO_NAME = 'apk/sqzy-timetable-%s.apk'
 
 
 def sha256_of(path):
@@ -31,6 +35,13 @@ def build(html_path, ver, stamp):
     tag = m.group(1) if m else ver
     base = 'https://gitee.com/xyz-225648/sqbwzxsj/releases/download/%s/' % tag
     info = {'exe': ver, 'apk': ver, 'tag': tag, 't': stamp}
+    path = APK_REPO_NAME % tag
+    info['apkRepoPath'] = path
+    gh = 'https://raw.githubusercontent.com/xyz-225648/sqbwzxsj/' + tag + '/' + path
+    info['apkMirror'] = ['https://cdn.jsdelivr.net/gh/xyz-225648/sqbwzxsj@' + tag + '/' + path,
+                         'https://fastly.jsdelivr.net/gh/xyz-225648/sqbwzxsj@' + tag + '/' + path,
+                         'https://gcore.jsdelivr.net/gh/xyz-225648/sqbwzxsj@' + tag + '/' + path,
+                         'https://ghproxy.net/' + gh]
     for kind, name in BASES.items():
         info[kind + 'Url'] = base + name.replace(' ', '%20')
         local = os.path.join(os.path.dirname(os.path.abspath(html_path)), name)

@@ -438,6 +438,42 @@ def run_all(cdp, url, vw, vh):
           and fresh.get('dlg') is False, '结果=%r' % (fresh,))
     cdp.ev('window.SQZY_SETSHELL(null)')
 
+    # ---------- 7.5 安装包下载：浏览器也要存成 .apk（issue IKHWKA 追问） ----------
+    # gitee 附件 CDN 对 apk 固定返回 application/zip（上传时指定 Content-Type 也改不了，实测过），
+    # 手机浏览器按 MIME 补后缀就变成 xxx.apk.zip。所以页面改成：支持 CORS 的镜像 fetch 成 blob
+    # 后自己指定文件名保存 —— 文件名由页面说了算，与服务器 MIME 无关。
+    mir = cdp.ev('window.SQZY_APK.mirrors({tag:"v9.9.9"})')
+    ok_mir = (isinstance(mir, list) and len(mir) >= 3
+              and all(str(u).startswith('https://') for u in mir)
+              and any('jsdelivr' in str(u) for u in mir) and any('ghproxy' in str(u) for u in mir))
+    check('镜像下载线路齐全（jsDelivr 三个域名 + ghproxy）', ok_mir, '线路=%r' % (mir,))
+    saved = cdp.ev('(function(){'
+                   'window.__saved=null;'
+                   'var oc=URL.createObjectURL;URL.createObjectURL=function(b){window.__saved={size:b.size};return "blob:x";};'
+                   'var ck=HTMLAnchorElement.prototype.click;'
+                   'HTMLAnchorElement.prototype.click=function(){window.__saved.name=this.download;};'
+                   'window.fetch=function(){return Promise.resolve({ok:true,status:200,'
+                   'arrayBuffer:function(){return Promise.resolve(new Uint8Array(150000).buffer);}});};'
+                   'try{window.SQZY_APK.smart({tag:"v9.9.9",apkSha256:""});}catch(e){return {err:String(e)};}'
+                   'return {soon:true,name:"pending"};})()')
+    time.sleep(1.0)
+    got = cdp.ev('window.__saved')
+    check('浏览器路径下载后文件名以 .apk 结尾（不是 .apk.zip）',
+          bool(got) and str(got.get('name', '')).endswith('.apk') and 'v9.9.9' in str(got.get('name')),
+          '捕获到的文件名=%r' % (got,))
+    check('blob 是真的拿到字节了（不是空壳）', bool(got) and (got.get('size') or 0) >= 100000,
+          '字节数=%r' % ((got or {}).get('size'),))
+    bridged = cdp.ev('(function(){document.documentElement.setAttribute("data-android","1");'
+                     'window.__bridge=null;'
+                     'window.SQZY_ANDROID={downloadApk:function(u){window.__bridge=u;return "ok";}};'
+                     'try{window.SQZY_APK.smart({tag:"v9.9.9"});}catch(e){}'
+                     'var u=window.__bridge;'
+                     'delete window.SQZY_ANDROID;'
+                     'document.documentElement.removeAttribute("data-android");'
+                     'return u;})()')
+    check('有原生桥时仍然交给系统下载器（存成 .apk、不会被改名）',
+          bool(bridged) and 'gitee.com' in str(bridged), '桥收到=%r' % (bridged,))
+
     # ---------- 8. 通知判定（假时钟，可复现） ----------
     def arm_clock(hh, mi, day=21):
         """把页面里的 Date 换成假时钟，并清掉磁盘上的去重表；返回后必须自己再设一遍规则

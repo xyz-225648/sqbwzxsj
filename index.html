@@ -1114,14 +1114,14 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.2.0';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.2.1';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 安卓/桌面安装包挂在哪个发行版 tag 下：跟着本版号走（每版一个 tag，每个 tag
    只放它自己那一版的安装包，不回填旧 tag——否则 tag 与二进制对不上，见 issue IKHTOU）。
    注意：这个 tag 必须在**页面发布之前**就已存在，否则窗口期内下载按钮指向不存在的 tag。
    发布顺序：合并页面 PR → 立刻建同名 tag/发行版 → 上传附件。 */
-var RELEASE_TAG = 'v2.2.0';
+var RELEASE_TAG = 'v2.2.1';
 var latestInfo = null;
 /* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
 var SHELL_SEEN_KEY = 'sqzy-seen-shell';
@@ -1364,19 +1364,11 @@ function showUpdateDialog(info){
   apk.rel = 'noopener';
   apk.textContent = isAndroid() ? '一键下载安装包' : '下载安卓新版';
   if (isAndroid()){
+    apk.textContent = '一键下载安装包（存成 .apk）';
     apk.href = 'javascript:void 0';
     apk.addEventListener('click', function(ev){
       ev.preventDefault();
-      try{
-        if (window.SQZY_ANDROID && window.SQZY_ANDROID.downloadApk){
-          var r = window.SQZY_ANDROID.downloadApk(apk.getAttribute('data-url'));
-          inPageToast(r === 'ok' ? '已开始后台下载' : '下载启动失败',
-                      r === 'ok' ? '下载完点通知里的安装即可（会覆盖旧版，数据不丢）'
-                                 : '可以在浏览器里手动下载');
-          return;
-        }
-      }catch(e){}
-      openExternal(apk.getAttribute('data-url'));
+      downloadApkSmart(latestInfo);
     });
   }
 
@@ -1443,6 +1435,74 @@ function shellDownloadUrl(info){
   var tag = (info && info.tag) || RELEASE_TAG;
   return 'https://gitee.com/xyz-225648/sqbwzxsj/releases/tag/' + tag;
 }
+function apkMirrors(info){
+  /* 让浏览器也能下到 .apk（issue IKHWKA 追问）：
+     gitee 附件 CDN 对 apk 固定返回 Content-Type: application/zip，手机浏览器按 MIME 补后缀
+     就变成 xxx.apk.zip，而且它没有 CORS 头、网页拿不到字节。所以另走"仓库文件 + 支持 CORS 的
+     代理 CDN"，页面 fetch 成 blob 后自己指定文件名保存 —— 文件名由页面说了算，与服务器 MIME 无关。 */
+  if (info && info.apkMirror && info.apkMirror.length) return info.apkMirror.slice();
+  var tag = (info && info.tag) || RELEASE_TAG;
+  var path = (info && info.apkRepoPath) || ('apk/sqzy-timetable-' + tag + '.apk');
+  var gh = 'https://raw.githubusercontent.com/xyz-225648/sqbwzxsj/' + tag + '/' + path;
+  return ['https://cdn.jsdelivr.net/gh/xyz-225648/sqbwzxsj@' + tag + '/' + path,
+          'https://fastly.jsdelivr.net/gh/xyz-225648/sqbwzxsj@' + tag + '/' + path,
+          'https://gcore.jsdelivr.net/gh/xyz-225648/sqbwzxsj@' + tag + '/' + path,
+          'https://ghproxy.net/' + gh];
+}
+function apkFileName(info){
+  var tag = (info && info.tag) || RELEASE_TAG;
+  return '宿迁职业技术学院作息时间表-' + tag + '.apk';
+}
+function hexOf(buf){
+  var a = new Uint8Array(buf), s = '';
+  for (var i = 0; i < a.length; i++) s += ('0' + a[i].toString(16)).slice(-2);
+  return s;
+}
+function saveBlob(blob, name){
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = name; a.style.display = 'none';
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 4000);
+}
+function fetchApkByMirror(info, i, cb){
+  var list = apkMirrors(info);
+  if (i >= list.length){ cb(false); return; }
+  var url = list[i];
+  fetch(url, {cache:'no-store'}).then(function(r){
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.arrayBuffer();
+  }).then(function(buf){
+    if (buf.byteLength < 100000) throw new Error('太小');
+    var want = (info && info.apkSha256) || '';
+    if (!want || !window.crypto || !crypto.subtle){ saveBlob(new Blob([buf], {type:'application/vnd.android.package-archive'}), apkFileName(info)); cb(true); return; }
+    crypto.subtle.digest('SHA-256', buf).then(function(d){
+      if (hexOf(d) === String(want).toLowerCase()){
+        saveBlob(new Blob([buf], {type:'application/vnd.android.package-archive'}), apkFileName(info));
+        cb(true);
+      } else { fetchApkByMirror(info, i + 1, cb); }        /* 校验不过就换下一条 */
+    }).catch(function(){ fetchApkByMirror(info, i + 1, cb); });
+  }).catch(function(){ fetchApkByMirror(info, i + 1, cb); });
+}
+function downloadApkSmart(info){
+  /* 有原生桥 → 交给系统下载器（显式文件名，存下来就是 .apk）；没有 → 走镜像自己保存；
+     两条都不行 → 打开 gitee 附件并说明改名办法 */
+  var gitee = shellAssetUrl(info, 'apk');
+  if (isAndroid() && window.SQZY_ANDROID && window.SQZY_ANDROID.downloadApk){
+    try{
+      var r = window.SQZY_ANDROID.downloadApk(gitee);
+      if (r === 'ok'){ inPageToast('已开始后台下载', '下完点通知直接安装，存的是 .apk'); return; }
+    }catch(e){}
+  }
+  inPageToast('正在从镜像下载…', '拿不到就自动换下一条线路');
+  fetchApkByMirror(info, 0, function(ok){
+    if (ok) inPageToast('已保存安装包', apkFileName(info) + '（文件名是对的，直接点安装）');
+    else {
+      inPageToast('镜像都不通', '已打开 gitee 下载页：若下到 .apk.zip，改回 .apk 再装');
+      openExternal(gitee);
+    }
+  });
+}
 function shellAssetUrl(info, kind){
   /* program.txt 里带直链就用它，没带就按发行包命名规则拼 */
   var u = info && (kind === 'apk' ? info.apkUrl : info.exeUrl);
@@ -1490,7 +1550,11 @@ function renderShellNote(text, hi, url){
   var btn = document.getElementById('aboutDownload');
   if (btn){
     btn.style.display = url ? '' : 'none';
-    btn.onclick = url ? function(){ openExternal(url); } : null;
+    btn.onclick = url ? function(){
+      /* 安卓上别把人送去 gitee 附件（会被改名成 .apk.zip），直接走能定文件名的下载 */
+      if (isAndroid() && shellKey() === 'apk') downloadApkSmart(programInfo || latestInfo);
+      else openExternal(url);
+    } : null;
   }
 }
 function applyProgramInfo(info){
@@ -1529,7 +1593,8 @@ function showShellDialog(cur, want, url, info){
     '<span style="color:#1d4ed8">' + want + '</span></div>';
   var go = document.createElement('button');
   go.type = 'button'; go.className = 'settest';
-  go.textContent = canAuto ? '一键更新（下载完自动换新重启）' : '去下载新版';
+  go.textContent = canAuto ? '一键更新（下载完自动换新重启）'
+                           : (isAndroid() ? '一键下载安装包（存成 .apk）' : '去下载新版');
   var later = document.createElement('button');
   later.type = 'button'; later.className = 'settest';
   later.style.background = '#e2e8f0'; later.style.color = '#0f172a';
@@ -1538,7 +1603,11 @@ function showShellDialog(cur, want, url, info){
   wrap.appendChild(card);
   document.body.appendChild(wrap);
   go.addEventListener('click', function(){
-    if (!canAuto){ openExternal(url); closeDialog('shDlg'); return; }
+    if (!canAuto){
+      if (isAndroid()) downloadApkSmart(info || programInfo);
+      else openExternal(url);
+      closeDialog('shDlg'); return;
+    }
     /* 交给 exe：/download 下载+校验 sha256，/apply 写替换脚本并重启 */
     go.disabled = true; go.textContent = '正在下载新版…';
     later.textContent = '取消';
@@ -1733,6 +1802,7 @@ function initSettings(){
         '<div class="setnote" id="andBattNote"></div>' +
         '<button class="settest" id="andBatt" type="button">允许后台运行（关掉电池优化）</button>' +
         '<button class="settest" id="andSys" type="button">打开应用设置（自启动 / 权限）</button>' +
+        '<button class="settest" id="andShare" type="button">把安装包分享给同学（微信 / QQ / 蓝牙）</button>' +
         '<div class="setnote">国产系统默认会「清理后台」，光关电池优化还不够，自启动一般要手动放行：' +
         '小米＝设置→应用设置→应用管理→本应用→自启动；华为/荣耀＝设置→应用→应用启动管理→本应用改成「手动管理」，三项都允许；' +
         'OPPO/一加＝设置→电池→应用耗电管理→允许后台运行并允许自启动；vivo＝设置→电池→后台高耗电→允许；' +
@@ -1836,6 +1906,16 @@ function initSettings(){
           window.SQZY_ANDROID.openAppSettings();
       }catch(e){}
     });
+    var bsh = document.getElementById('andShare');
+    if (bsh) bsh.addEventListener('click', function(){
+      var r = 'no-bridge';
+      try{
+        if (window.SQZY_ANDROID && window.SQZY_ANDROID.shareApk)
+          r = window.SQZY_ANDROID.shareApk();
+      }catch(e){ r = 'fail'; }
+      inPageToast(r === 'ok' ? '选个应用发出去就行' : '分享没打开',
+                  r === 'ok' ? '发的是本机这份安装包，对方点开就能装' : '可以先用「一键下载安装包」存一份再手动发');
+    });
     refreshAnd();
     document.addEventListener('visibilitychange', function(){ if (!document.hidden) refreshAnd(); });
   }
@@ -1902,6 +1982,7 @@ function initSettings(){
   window.SQZY_MIRRORCFG = mirrorCfg;
   window.SQZY_ADOPTCFG = adoptCfgFromShell;
   window.SQZY_APPLYPROGRAM = applyProgramInfo;
+  window.SQZY_APK = { mirrors: apkMirrors, smart: downloadApkSmart, name: apkFileName };
   window.SQZY_SETSHELL = function(v){ shellVer = normVer(v); };
   window.SQZY_GETSHELL = function(){ return shellVer; };
   window.SQZY_SEGAT = segAtMin;

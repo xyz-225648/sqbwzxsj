@@ -40,6 +40,12 @@
 - 走**安卓系统通知**（首次启动会申请通知权限）
 - 打开后 1~2 秒自动刷新成仓库里的最新课表
 - 手机版不显示「置顶 / 切换横竖版」这类只对桌面有意义的按钮
+- **装包不会被改名**：gitee 附件 CDN 对 `.apk` 固定返回 `application/zip`（实测改不了），
+  手机浏览器会按 MIME 把它存成 `.apk.zip`。所以 apk 另外以**仓库文件**提交一份
+  （`apk/sqzy-timetable-<tag>.apk`），页面在浏览器里走 jsdelivr / ghproxy 这些带 CORS 的代理
+  `fetch` 成 blob 后自己指定文件名保存；应用内则走系统 DownloadManager —— 两条路都存成 `.apk`。
+  镜像线路全不通时才回退 gitee 附件，并提示把后缀改回来。
+- **分享安装包**：设置里可以把本机这份 apk 直接发给同学（微信 / QQ / 蓝牙）
 - **后台常驻**：设置里的开关会起一个前台服务（状态栏留一条通知，`IMPORTANCE_MIN`），
   系统就不会把提醒一起冻结；还能一键申请「忽略电池优化」、跳到应用设置
 - **开机自启**：`BootReceiver` 收到开机广播后把常驻服务拉起来
@@ -91,7 +97,8 @@
 | version.txt | 版本标记，内容变了才触发更新 |
 | app.py | Windows 桌面版源码（pywebview + WebView2） |
 | publish.sh | 一键发布：先过全部自检，再生成 release/ 里的三个文件 |
-| make_program_txt.py | 生成 program.txt：写入 exe/apk 版本、发行包直链、sha256 和字节数（一键更新要用） |
+| make_program_txt.py | 生成 program.txt：exe/apk 版本、直链、sha256、字节数，以及 apk 的仓库镜像路径 / 代理 CDN 线路 |
+| apk/sqzy-timetable-<tag>.apk | 每个版本提交一份 apk 副本：给「浏览器也要存成 .apk」用的镜像源（约 120 KB/版） |
 | set-update-url.sh | 给二次开发者用：改自动更新地址并重新打包 |
 | check_live.py | 发布之后核验线上：网页、版本号、两个下载链接跟本地是否一致 |
 | gitee_repo.py | 维护者工具：仓库文件 / 分支 / Pull Request / Issue / 发行版，一条命令管一种动作（令牌读本机 .gitee_token，不会进仓库） |
