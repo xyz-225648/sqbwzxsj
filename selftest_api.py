@@ -70,6 +70,11 @@ try:
         if not ok_page:
             rc = 1
 
+        st, body = call('/version')
+        print('  /version   HTTP %d  %s   ← 页面靠它判断「程序本体要不要更新」' % (st, body))
+        if '"shell": "v' not in body:
+            print('    ✗ /version 没返回壳版本（页面的程序本体检查会失效）'); rc = 1
+
         # 窗口状态信箱：读默认 → 写 → 读回 → 落盘
         st, body = call('/state')
         d0 = json.loads(body)
