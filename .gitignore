@@ -1,0 +1,15 @@
+# 本机凭据（绝不入库）
+.gitee_token
+.github_token
+.github_owner
+
+# 构建产物 / 临时目录
+build/
+dist/
+__pycache__/
+*.pyc
+*.idsig
+.pylibs/
+.testdata*/
+.mirror_*/
+.gitprobe/
