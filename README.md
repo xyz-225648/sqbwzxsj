@@ -79,6 +79,7 @@ publish.sh 会把它复制成 index.html；仓库里只保留一份，避免重�
 | publish.sh | 一键发布：先过全部自检，再生成 release/ 里的两个文件 |
 | set-update-url.sh | 给二次开发者用：改自动更新地址并重新打包 |
 | check_live.py | 发布之后核验线上：网页、版本号、两个下载链接跟本地是否一致 |
+| gitee_repo.py | 维护者工具：仓库文件 / 分支 / Pull Request / Issue / 发行版，一条命令管一种动作（令牌读本机 .gitee_token，不会进仓库） |
 | 自动更新使用说明.md | 自动更新的原理和日常操作 |
 | CHANGELOG.md | 每个版本改了什么 |
 
