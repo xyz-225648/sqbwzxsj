@@ -332,9 +332,12 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
                 api_log('首页回包失败 %r' % (exc,), 'warn')
             return
         if u.path == '/state':
-            # 窗口状态信箱：网页在这里读/写「置顶、关闭方式、恢复显示」
-            if any(k in q for k in ('top', 'close', 'show')):
+            # 窗口状态信箱：网页在这里读/写「置顶、关闭方式、开机自启动、恢复显示」
+            if any(k in q for k in ('top', 'close', 'show', 'startup')):
                 kw = {}
+                if 'startup' in q:
+                    # 自启动是注册表说了算，不放状态文件里（状态文件只管窗口）
+                    set_autostart(q['startup'][0] not in ('0', 'false', 'off', ''))
                 if 'top' in q:
                     kw['always_on_top'] = q['top'][0] not in ('0', 'false', 'off', '')
                 if 'close' in q:
@@ -345,6 +348,7 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
                 api_log('窗口状态更新 -> %r' % (st,))
             else:
                 st = read_win_state()
+            st['autostart'] = get_autostart()      # 页面拿它决定开关的勾选状态
             return self._reply({'ok': True, 'state': st})
         if u.path == '/ping':
             return self._reply({'ok': True, 'native': True, 'name': APP_TITLE})
@@ -518,6 +522,8 @@ def acquire_profile_lock():
 # 好处是两边都不用跨进程调用，谁也不阻塞谁。
 WIN_DEFAULTS = {'always_on_top': False, 'close_mode': 'tray', 'show': 0}
 _UI = {'form': None, 'tray': None, 'icon': None, 'exiting': False}
+# 命令行带 --tray（开机自启动拉起来的那次）时，窗口建好就直接进托盘
+START_HIDDEN = '--tray' in sys.argv
 
 
 _INSTANCE_LOCK = []
@@ -577,6 +583,64 @@ def write_win_state(**kw):
     except Exception as exc:
         api_log('写窗口状态失败 %r' % (exc,), 'warn')
     return o
+
+
+# ==================== 开机自启动 ====================
+# 只用 HKCUSoftwareMicrosoftWindowsCurrentVersionRun：
+# 不写系统目录、不要管理员权限,卸载时删掉这个值即可（绿色软件该有的样子）。
+AUTOSTART_NAME = APP_TITLE
+AUTOSTART_KEY = r'Software\Microsoft\Windows\CurrentVersion\Run'
+
+
+def self_command():
+    """自启动要执行的命令行。打包后就是 exe 自己；源码模式带上 python 和脚本路径。
+    末尾的 --tray 让它在开机时直接进托盘，不打扰人。"""
+    if getattr(sys, 'frozen', False):
+        return '"%s" --tray' % sys.executable
+    return '"%s" "%s" --tray' % (sys.executable, os.path.abspath(sys.argv[0]))
+
+
+def get_autostart():
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, AUTOSTART_KEY) as k:
+            val, _ = winreg.QueryValueEx(k, AUTOSTART_NAME)
+            return bool(val)
+    except Exception:
+        return False
+
+
+def set_autostart(on):
+    try:
+        import winreg
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, AUTOSTART_KEY) as k:
+            if on:
+                winreg.SetValueEx(k, AUTOSTART_NAME, 0, winreg.REG_SZ, self_command())
+            else:
+                try:
+                    winreg.DeleteValue(k, AUTOSTART_NAME)
+                except FileNotFoundError:
+                    pass
+        api_log('开机自启动 -> %s' % get_autostart())
+    except Exception as exc:
+        api_log('设置开机自启动失败 %r' % (exc,), 'warn')
+    return get_autostart()
+
+
+def refresh_autostart():
+    """已经开了自启动的话，每次启动顺手把命令里的路径刷新一遍：
+    用户把 exe 挪了地方（或换了新版本），注册表里那条旧路径就会失效。"""
+    try:
+        if not get_autostart():
+            return
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, AUTOSTART_KEY) as k:
+            old, _ = winreg.QueryValueEx(k, AUTOSTART_NAME)
+        if old != self_command():
+            set_autostart(True)
+            api_log('自启动路径已刷新')
+    except Exception:
+        pass
 
 
 def win_main_form():
@@ -780,6 +844,9 @@ def _install_ui():
         form.FormClosing += _on_form_closing
         form.Resize += _on_form_resize
         api_log('已接管窗口关闭/最小化（关闭方式：%s）' % read_win_state()['close_mode'])
+        if START_HIDDEN:
+            # 开机自启动拉起来的这次：直接进托盘，别在开机时糊人一脸窗口
+            _do_hide()
     except Exception as exc:
         api_log('窗口接管失败 %r' % (exc,), 'error')
 
@@ -905,6 +972,11 @@ def main():
         run_api_server(int(sys.argv[sys.argv.index('--api-server') + 1]))
         return
     if not acquire_instance_lock():
+        if START_HIDDEN:
+            # 开机自启动的这次发现已经有一个在跑（用户自己先开过）：
+            # 悄悄退出就行，别在开机时把窗口弹到人脸上
+            api_log('已有实例在运行，本次为开机自启动，静默退出')
+            return
         # 已经开着一个（哪怕它正藏在托盘里）：只请它显示到前台，本进程立刻退出。
         try:
             # 把「允许抢前台」的许可交给已在运行的那个进程，
@@ -916,6 +988,7 @@ def main():
         write_win_state(show=int(time.time() * 1000))
         api_log('已有实例在运行，已请它显示到前台，本进程退出')
         return
+    refresh_autostart()                 # exe 被挪了地方也能自愈
     html = load_current_html()
 
     if not has_webview2():
