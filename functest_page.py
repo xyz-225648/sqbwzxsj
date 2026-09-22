@@ -368,6 +368,49 @@ def run_all(cdp, url, vw, vh):
     check('回到网页版后「窗口」分区又藏起来', back.get('ok') is False and back.get('sec') == 'none',
           '回退后=%r' % (back,))
 
+    # ---------- 7.6 程序本体（exe/apk）版本检查 ----------
+    cdp.ev('localStorage.removeItem("sqzy-seen-shell")')
+    cdp.ev('window.SQZY_SETSHELL(null)')
+    cdp.ev('window.SQZY_APPLYPROGRAM({exe:"v9.9.9", apk:"v9.9.9", tag:"v9.9.9"})')
+    time.sleep(0.3)
+    web = cdp.ev('document.getElementById("aboutShell").textContent')
+    check('网页版没有程序本体，不提示换壳', not (web or '').strip(), '竟然提示了：%r' % (web,))
+
+    cdp.ev('window.SQZY_SETSHELL("v2.1.0")')
+    cdp.ev('window.SQZY_APPLYPROGRAM({exe:"v2.1.1", apk:"v2.1.1", tag:"v2.1.1"})')
+    time.sleep(0.4)
+    stale = cdp.ev('(function(){return {txt:document.getElementById("aboutShell").textContent,'
+                   'hi:document.getElementById("aboutShell").className,'
+                   'btn:getComputedStyle(document.getElementById("aboutDownload")).display,'
+                   'dlg:!!document.getElementById("shDlg"),'
+                   'seen:localStorage.getItem("sqzy-seen-shell")};})()')
+    check('程序本体落后 → 「关于」里如实写明并给出下载按钮',
+          'v2.1.0' in (stale.get('txt') or '') and 'v2.1.1' in (stale.get('txt') or '')
+          and stale.get('btn') != 'none' and 'hi' in (stale.get('hi') or ''),
+          '关于区=%r' % (stale,))
+    check('程序本体落后 → 弹一次性提示（并记住已提示）',
+          stale.get('dlg') is True and stale.get('seen') == 'v2.1.1', '弹窗=%r' % (stale,))
+    print('    · 关于区原文: %s' % (stale.get('txt') or '')[:64])
+    cdp.ev('(function(){var d=document.getElementById("shClose"); if (d) d.click();})()')
+    time.sleep(0.3)
+    check('关掉提示后滚动锁也解除',
+          not bools(cdp, 'document.documentElement.classList.contains("sheet-lock")'), '还被锁着')
+    cdp.ev('window.SQZY_APPLYPROGRAM({exe:"v2.1.1", apk:"v2.1.1", tag:"v2.1.1"})')
+    time.sleep(0.3)
+    check('同一个新版本只弹一次（不再打扰）',
+          not bools(cdp, '!!document.getElementById("shDlg")'), '又弹了一次')
+
+    cdp.ev('window.SQZY_SETSHELL("v2.1.1")')
+    cdp.ev('window.SQZY_APPLYPROGRAM({exe:"v2.1.1", apk:"v2.1.1", tag:"v2.1.1"})')
+    time.sleep(0.3)
+    fresh = cdp.ev('(function(){return {txt:document.getElementById("aboutShell").textContent,'
+                   'btn:getComputedStyle(document.getElementById("aboutDownload")).display,'
+                   'dlg:!!document.getElementById("shDlg")};})()')
+    check('程序本体已是最新 → 只报平安、不弹窗、不给下载按钮',
+          '最新' in (fresh.get('txt') or '') and fresh.get('btn') == 'none'
+          and fresh.get('dlg') is False, '结果=%r' % (fresh,))
+    cdp.ev('window.SQZY_SETSHELL(null)')
+
     # ---------- 8. 通知判定（假时钟，可复现） ----------
     def arm_clock(hh, mi, day=21):
         """把页面里的 Date 换成假时钟，并清掉磁盘上的去重表；返回后必须自己再设一遍规则
