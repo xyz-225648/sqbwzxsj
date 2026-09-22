@@ -1114,14 +1114,14 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.1.3';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.2.0';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 安卓/桌面安装包挂在哪个发行版 tag 下：跟着本版号走（每版一个 tag，每个 tag
    只放它自己那一版的安装包，不回填旧 tag——否则 tag 与二进制对不上，见 issue IKHTOU）。
    注意：这个 tag 必须在**页面发布之前**就已存在，否则窗口期内下载按钮指向不存在的 tag。
    发布顺序：合并页面 PR → 立刻建同名 tag/发行版 → 上传附件。 */
-var RELEASE_TAG = 'v2.1.3';
+var RELEASE_TAG = 'v2.2.0';
 var latestInfo = null;
 /* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
 var SHELL_SEEN_KEY = 'sqzy-seen-shell';
@@ -1358,11 +1358,27 @@ function showUpdateDialog(info){
   apk.style.textAlign = 'center';
   apk.style.textDecoration = 'none';
   apk.style.boxSizing = 'border-box';
-  apk.href = 'https://gitee.com/xyz-225648/sqbwzxsj/releases/download/' + RELEASE_TAG + '/'
-           + encodeURIComponent('宿迁职业技术学院作息时间表.apk');
+  apk.setAttribute('data-url', shellAssetUrl(latestInfo, 'apk'));
+  apk.href = apk.getAttribute('data-url');
   apk.target = '_blank';
   apk.rel = 'noopener';
-  apk.textContent = '下载安卓新版';
+  apk.textContent = isAndroid() ? '一键下载安装包' : '下载安卓新版';
+  if (isAndroid()){
+    apk.href = 'javascript:void 0';
+    apk.addEventListener('click', function(ev){
+      ev.preventDefault();
+      try{
+        if (window.SQZY_ANDROID && window.SQZY_ANDROID.downloadApk){
+          var r = window.SQZY_ANDROID.downloadApk(apk.getAttribute('data-url'));
+          inPageToast(r === 'ok' ? '已开始后台下载' : '下载启动失败',
+                      r === 'ok' ? '下载完点通知里的安装即可（会覆盖旧版，数据不丢）'
+                                 : '可以在浏览器里手动下载');
+          return;
+        }
+      }catch(e){}
+      openExternal(apk.getAttribute('data-url'));
+    });
+  }
 
   var later = document.createElement('button');
   later.type = 'button';
@@ -1388,11 +1404,52 @@ function verNum(v){
   var m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(String(v || ''));
   return m ? (+m[1]) * 10000 + (+m[2]) * 100 + (+m[3]) : -1;
 }
+/* 版本信息怎么读（issue IKHWKA #1）：
+   gitee raw 一律返回 text/plain + X-Content-Type-Options: nosniff 且不带 CORS 头，
+   所以 <script src> 会被 Chromium 拒执行、fetch 会被 CORS 挡 —— 两条路都不通。
+   现在分三条：
+     桌面版：走本地接口 /latest（本来就不受影响）
+     安卓版：走原生桥 fetchUrl（HttpURLConnection 不看 MIME、不受 CORS 限制），读 gitee 原始文件
+     网页版：fetch GitHub 镜像（raw.githubusercontent.com 带 Access-Control-Allow-Origin: *）
+*/
+var MIRROR_RAW = 'https://raw.githubusercontent.com/xyz-225648/sqbwzxsj/master/';
+function readRemoteText(name, cb){
+  try{
+    if (window.SQZY_ANDROID && window.SQZY_ANDROID.fetchUrl){
+      var t = window.SQZY_ANDROID.fetchUrl('https://gitee.com/xyz-225648/sqbwzxsj/raw/master/' + name);
+      if (t) { cb(t); return; }
+    }
+  }catch(e){}
+  try{
+    fetch(MIRROR_RAW + name + '?t=' + Date.now()).then(function(r){
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    }).then(function(t){ cb(t); })
+      .catch(function(){ cb(null); });
+  }catch(e){ cb(null); }
+}
+function parseVerText(text, key){
+  if (!text) return null;
+  var m = /\{[\s\S]*\}/.exec(text);
+  if (!m) return null;
+  try{
+    var o = JSON.parse(m[0]);
+    return o || null;
+  }catch(e){ return null; }
+}
 function shellKey(){ return isAndroid() ? 'apk' : 'exe'; }
 function shellName(){ return isAndroid() ? '手机版安装包' : 'Windows 程序'; }
 function shellDownloadUrl(info){
   var tag = (info && info.tag) || RELEASE_TAG;
   return 'https://gitee.com/xyz-225648/sqbwzxsj/releases/tag/' + tag;
+}
+function shellAssetUrl(info, kind){
+  /* program.txt 里带直链就用它，没带就按发行包命名规则拼 */
+  var u = info && (kind === 'apk' ? info.apkUrl : info.exeUrl);
+  if (u) return u;
+  var tag = (info && info.tag) || RELEASE_TAG;
+  return 'https://gitee.com/xyz-225648/sqbwzxsj/releases/download/' + tag + '/' +
+    encodeURIComponent(kind === 'apk' ? '宿迁职业技术学院作息时间表.apk' : '宿迁职业技术学院作息时间表.exe');
 }
 function openExternal(url){
   /* 桌面版的页面在 WebView 里，点外链得让壳用系统浏览器打开 */
@@ -1453,11 +1510,12 @@ function applyProgramInfo(info){
                   shellName() + '要手动换）', true, shellDownloadUrl(info));
   if (safeGet(SHELL_SEEN_KEY) !== want){
     safeSet(SHELL_SEEN_KEY, want);
-    showShellDialog(shellVer, want, shellDownloadUrl(info));
+    showShellDialog(shellVer, want, shellDownloadUrl(info), info);
   }
 }
-function showShellDialog(cur, want, url){
+function showShellDialog(cur, want, url, info){
   closeDialog('shDlg');
+  var canAuto = !isAndroid() && !!apiBase();   /* 只有 exe 才能自我替换 */
   var wrap = document.createElement('div');
   wrap.className = 'sheet'; wrap.id = 'shDlg';
   sheetOpen(wrap);
@@ -1470,7 +1528,8 @@ function showShellDialog(cur, want, url){
     '<div class="setrow" style="display:block"><b>当前：</b>' + cur + '　<b>新版：</b>' +
     '<span style="color:#1d4ed8">' + want + '</span></div>';
   var go = document.createElement('button');
-  go.type = 'button'; go.className = 'settest'; go.textContent = '去下载新版';
+  go.type = 'button'; go.className = 'settest';
+  go.textContent = canAuto ? '一键更新（下载完自动换新重启）' : '去下载新版';
   var later = document.createElement('button');
   later.type = 'button'; later.className = 'settest';
   later.style.background = '#e2e8f0'; later.style.color = '#0f172a';
@@ -1478,7 +1537,30 @@ function showShellDialog(cur, want, url){
   card.appendChild(go); card.appendChild(later);
   wrap.appendChild(card);
   document.body.appendChild(wrap);
-  go.addEventListener('click', function(){ openExternal(url); closeDialog('shDlg'); });
+  go.addEventListener('click', function(){
+    if (!canAuto){ openExternal(url); closeDialog('shDlg'); return; }
+    /* 交给 exe：/download 下载+校验 sha256，/apply 写替换脚本并重启 */
+    go.disabled = true; go.textContent = '正在下载新版…';
+    later.textContent = '取消';
+    var q = '/download?' + apiQs() + '&url=' + encodeURIComponent(shellAssetUrl(info, 'exe')) +
+            '&v=' + encodeURIComponent(want) +
+            (info && info.exeSha256 ? '&sha256=' + encodeURIComponent(info.exeSha256) : '');
+    fetch(apiBase() + q).then(function(r){ return r.json(); }).then(function(o){
+      if (!o || !o.ok) throw new Error((o && o.msg) || '下载失败');
+      go.textContent = '正在替换…';
+      return fetch(apiBase() + '/apply?' + apiQs()).then(function(r){ return r.json(); })
+        .then(function(a){
+          if (!a || !a.ok) throw new Error((a && a.msg) || '替换失败');
+          go.textContent = '更新完成，稍后自动回来';
+          inPageToast('已下载并校验通过', a.msg + '；重启后就是 ' + want + '，设置和课表都不会丢');
+        });
+    }).catch(function(err){
+      go.disabled = false; go.textContent = '手动下载新版';
+      later.textContent = '稍后再说';
+      go.onclick = function(){ openExternal(url); closeDialog('shDlg'); };
+      inPageToast('一键更新没成功', String((err && err.message) || err) + '；已改成手动下载');
+    });
+  });
   later.addEventListener('click', function(){ closeDialog('shDlg'); });
   document.getElementById('shClose').addEventListener('click', function(){ closeDialog('shDlg'); });
   wrap.addEventListener('click', function(e){ if (e.target === wrap) closeDialog('shDlg'); });
@@ -1492,17 +1574,11 @@ function checkShellProgram(manual){
       else if (manual) renderShellNote('拿不到程序本体的版本信息（检查更新试试）', false, '');
       return;
     }
-    var s = document.createElement('script');
-    s.src = UPDATE_BASE + 'program.txt?t=' + Date.now();
-    s.onload = function(){
-      applyProgramInfo(window.SQZY_PROGRAM || null);
-      if (s.parentNode) s.parentNode.removeChild(s);
-    };
-    s.onerror = function(){
-      if (manual) renderShellNote('拿不到程序本体的版本信息（检查网络）', false, '');
-      if (s.parentNode) s.parentNode.removeChild(s);
-    };
-    document.head.appendChild(s);
+    readRemoteText('program.txt', function(text){
+      var info = parseVerText(text);
+      if (!info && manual) renderShellNote('拿不到程序本体的版本信息（检查网络）', false, '');
+      applyProgramInfo(info);
+    });
   });
 }
 function applyUpdateInfo(info, manual){
@@ -1540,18 +1616,12 @@ function checkAppUpdate(manual){
       return;
     }catch(e){}
   }
-  var s = document.createElement('script');
-  s.src = UPDATE_BASE + 'version.txt?t=' + Date.now();
-  s.onload = function(){
-    applyUpdateInfo(window.SQZY_LATEST || null, manual);
-    if (s.parentNode) s.parentNode.removeChild(s);
-    if (window.SQZY_PROGRAM) applyProgramInfo(window.SQZY_PROGRAM);   /* 安卓：装包版本 */
-  };
-  s.onerror = function(){
-    applyUpdateInfo(null, manual);
-    if (s.parentNode) s.parentNode.removeChild(s);
-  };
-  document.head.appendChild(s);
+  readRemoteText('version.txt', function(text){
+    applyUpdateInfo(parseVerText(text), manual);
+    readRemoteText('program.txt', function(p){
+      applyProgramInfo(parseVerText(p));            /* 程序本体（apk/exe）发布版本 */
+    });
+  });
 }
 function refreshSetUI(){
   var ids = ['setOn','setBefore','setNext','setStart','setEnd'];
@@ -1656,6 +1726,18 @@ function initSettings(){
         '<div class="setnote">隐藏到托盘后程序仍在后台跑，课表提醒照常发；双击托盘图标恢复窗口，右键托盘图标可退出。' +
         '开机自启动只写当前用户的启动项，不用管理员权限，取消勾选即刻移除。</div>' +
       '</div>' +
+      '<div class="setsec" id="andSecName" style="display:none">后台运行（仅安卓手机版）</div>' +
+      '<div id="andSec" style="display:none">' +
+        '<div class="setrow"><label><input type="checkbox" id="setKeep">后台常驻' +
+          '<span style="font-size:11px;color:#94a3b8;margin-left:6px">状态栏留一条通知，系统就不容易杀掉它</span></label></div>' +
+        '<div class="setnote" id="andBattNote"></div>' +
+        '<button class="settest" id="andBatt" type="button">允许后台运行（关掉电池优化）</button>' +
+        '<button class="settest" id="andSys" type="button">打开应用设置（自启动 / 权限）</button>' +
+        '<div class="setnote">国产系统默认会「清理后台」，光关电池优化还不够，自启动一般要手动放行：' +
+        '小米＝设置→应用设置→应用管理→本应用→自启动；华为/荣耀＝设置→应用→应用启动管理→本应用改成「手动管理」，三项都允许；' +
+        'OPPO/一加＝设置→电池→应用耗电管理→允许后台运行并允许自启动；vivo＝设置→电池→后台高耗电→允许；' +
+        '其他＝设置→应用→本应用→省电策略→「无限制」。设完回到本页会重新检测。</div>' +
+      '</div>' +
       '<button class="settest" id="setTest" type="button">发一条测试通知</button>' +
       '<div class="setnote" id="setNote"></div>' +
       '<div class="setsec">关于</div>' +
@@ -1707,6 +1789,56 @@ function initSettings(){
   if (trayBox) trayBox.addEventListener('change', function(){ winSetClose(trayBox.checked ? 'tray' : 'exit'); });
   var autoBox = document.getElementById('setAuto');
   if (autoBox) autoBox.addEventListener('change', function(){ winSetStartup(autoBox.checked); });
+
+  if (isAndroid()){
+    var andSec = document.getElementById('andSec'), andName = document.getElementById('andSecName');
+    if (andSec) andSec.style.display = '';
+    if (andName) andName.style.display = '';
+    var kB = document.getElementById('setKeep'), bn = document.getElementById('andBattNote');
+    function refreshAnd(){
+      var ign = false, chk = false;
+      try{
+        if (window.SQZY_ANDROID && window.SQZY_ANDROID.ignoringBattery)
+          ign = !!window.SQZY_ANDROID.ignoringBattery();
+      }catch(e){}
+      if (bn){
+        bn.textContent = ign ? '电池优化：已允许后台运行 ✓（息屏后提醒能正常发）'
+          : '电池优化：还没允许，息屏后系统可能把提醒一起冻结，点下面第一颗按钮去开。';
+        bn.className = 'setnote' + (ign ? '' : ' hi');
+      }
+      if (kB) chk = kB.checked;
+      return chk;
+    }
+    if (kB){
+      kB.checked = safeGet('sqzy_keepalive') !== '0';
+      kB.addEventListener('change', function(){
+        try{
+          if (window.SQZY_ANDROID && window.SQZY_ANDROID.keepAlive)
+            window.SQZY_ANDROID.keepAlive(kB.checked);
+        }catch(e){}
+        safeSet('sqzy_keepalive', kB.checked ? '1' : '0');
+        inPageToast('后台常驻已' + (kB.checked ? '开启' : '关闭'),
+          kB.checked ? '状态栏会出现一条本应用的通知，属正常现象' : '系统可能随时清掉后台，提醒有可能漏');
+      });
+    }
+    var bb = document.getElementById('andBatt');
+    if (bb) bb.addEventListener('click', function(){
+      try{
+        if (window.SQZY_ANDROID && window.SQZY_ANDROID.requestIgnoreBattery)
+          window.SQZY_ANDROID.requestIgnoreBattery();
+      }catch(e){}
+      setTimeout(refreshAnd, 1200);
+    });
+    var bs = document.getElementById('andSys');
+    if (bs) bs.addEventListener('click', function(){
+      try{
+        if (window.SQZY_ANDROID && window.SQZY_ANDROID.openAppSettings)
+          window.SQZY_ANDROID.openAppSettings();
+      }catch(e){}
+    });
+    refreshAnd();
+    document.addEventListener('visibilitychange', function(){ if (!document.hidden) refreshAnd(); });
+  }
 
   var host = document.getElementById('setTracks');
   if (host) host.addEventListener('click', function(e){
