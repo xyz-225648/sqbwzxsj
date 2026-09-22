@@ -136,10 +136,24 @@ def file_cmds(tok, args, branch=BRANCH):
         return 0
 
     if cmd == 'push':
+        # 改代码/文档一律走 PR：这里把「直推 master」堵死，
+        # 免得再出现「改完顺手推 master、没有评审记录」（已经犯过一次）。
+        if branch == BRANCH and '--direct' not in args:
+            print('  ✗ 拒绝直接推 master —— 改动要走 PR（issue → 分支 → PR → 审查合并）')
+            print('    正确流程：')
+            print('      python gitee_repo.py branch new fix/xxx')
+            print('      python gitee_repo.py --branch=fix/xxx push <改动的文件>')
+            print('      python gitee_repo.py pr new fix/xxx "<标题>" <说明.md>')
+            print('      python gitee_repo.py pr approve <编号> 然后 pr merge <编号>')
+            print('    确实要救急（例如线上页面坏了要立刻回滚）才加 --direct 绕过。')
+            return 1
+        args = [a for a in args if a != '--direct']
         bad = 0
         for a in args[1:]:
             local, _, remote = a.partition('>')
-            remote = remote or os.path.basename(local)
+            # 不给 >映射 就用本地相对路径本身（保留目录）：曾经因为只取文件名，
+            # 把 .github/workflows/xxx.yml 传成了仓库根目录下的 xxx.yml（踩过）
+            remote = remote or local.replace('\\', '/')
             if not os.path.exists(local):
                 print('  ✗ 本地文件不存在: %s' % local); bad += 1; continue
             raw = open(local, 'rb').read()
