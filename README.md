@@ -1,7 +1,6 @@
 # 宿迁职业技术学院作息时间表
 
-四个学院（信息设计 / 信息基础 / 通识教育 / 女子教育）的一日作息时间轴，
-**Windows 桌面版 / 安卓手机版 / 浏览器网页版** 三端通用。
+四个学院（信息设计 / 信息基础 / 通识教育 / 女子教育）的一日作息时间轴，**Windows 桌面版 / 安卓手机版 / 浏览器网页版** 三端通用。
 
 当前版本：**v2.1.0**
 
@@ -15,8 +14,7 @@
 | **安卓手机** | 宿迁职业技术学院作息时间表.apk | 允许「安装未知来源应用」后安装 |
 | **浏览器** | index.html（仓库根目录） | 任意浏览器直接打开 |
 
-> 仓库里只放源码、网页和自检脚本；体积大的 exe / apk 只放在发行版附件里，
-> 免得每次 clone 都要拖下十几 MB 的二进制。
+> 仓库里只放源码、网页和自检脚本；体积大的 exe / apk 只放在发行版附件里，免得每次 clone 都要拖下十几 MB 的二进制。
 
 ## 功能
 
@@ -72,8 +70,7 @@
 
 | 文件 | 用途 |
 |---|---|
-| index.html | 网页主体，也是自动更新的内容源（本地开发时页面源码叫「宿迁职业技术学院作息时间表.html」，
-publish.sh 会把它复制成 index.html；仓库里只保留一份，避免重复） |
+| index.html | 网页主体，也是自动更新的内容源（本地开发时页面源码叫「宿迁职业技术学院作息时间表.html」，publish.sh 会把它复制成 index.html；仓库里只保留一份，避免重复） |
 | version.txt | 版本标记，内容变了才触发更新 |
 | app.py | Windows 桌面版源码（pywebview + WebView2） |
 | publish.sh | 一键发布：先过全部自检，再生成 release/ 里的两个文件 |
@@ -96,8 +93,10 @@ publish.sh 会把它复制成 index.html；仓库里只保留一份，避免重�
 | functest_app.py | 桌面外壳端到端：真的开一个窗口，验单实例、托盘、置顶、退出 |
 | check_live.py | 发布**之后**跑：核验线上网页 / version.txt / exe、apk 下载链接与本地一致 |
 
-    python functest_app.py                        # 测源码
-    python functest_app.py --exe 宿迁职业技术学院作息时间表.exe   # 测打包好的 exe
+```bash
+python functest_app.py                        # 测源码
+python functest_app.py --exe 宿迁职业技术学院作息时间表.exe   # 测打包好的 exe
+```
 
 ## 开发流程（issue → 分支 → Pull Request → 合并）
 
@@ -134,7 +133,7 @@ publish.sh 会把它复制成 index.html；仓库里只保留一份，避免重�
 
 - 触发时机：每 6 小时一次 / GitHub 上 push 到 master（合并 PR 后立刻）/ 也可以在工作流页面手动点
 - 往 Gitee 推需要 GitHub 仓库里的 Actions secret `GITEE_TOKEN`（Gitee 私人令牌，勾 projects 权限）；没配的话只有 Gitee → GitHub 单向可用，反向那步会明确报错而不是假装成功
-- 主仓库仍然是 Gitee：产品改动请按上面的「开发流程」在 Gitee 走 PR；在 GitHub 上开发也可以，合并后会由这个工作流推回 Gitee
+- 主仓库仍然是 Gitee：产品改动按上面的「开发流程」在 Gitee 走 PR；在 GitHub 上开发也可以，合并后会由这个工作流推回 Gitee
 ## 许可
 
 MIT，见 [LICENSE](LICENSE)。
