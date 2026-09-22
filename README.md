@@ -117,8 +117,20 @@ python functest_app.py --exe 宿迁职业技术学院作息时间表.exe   # 测
 6. **回 issue**：`python gitee_repo.py issue comment <编号> "<版本 + 结论>"`，
    然后 `python gitee_repo.py issue close <编号>`。
 
-发布（换 exe / apk）依旧按上面的「自检脚本 + 发行版」流程：闸门全过 → 打 tag 发发行版 →
-原地替换附件，并把改动写进 CHANGELOG.md。
+### 发布也走 PR
+
+**发布**就是一次普通的改动，同样走上面的流程，不要图快直接推 master（已经犯过一次：v2.1.1 的改动绕过 PR 直推了 master）：
+
+- `index.html`（网页主体）、`version.txt`、`program.txt` 连同代码一起放进同一个 PR；
+  合并进 master 的那一刻，所有人的自动更新就会拿到新版本
+- 打 tag、发发行版、上传 exe / apk 附件是 **PR 之外** 的步骤（附件是二进制，没法评审）
+- 工具层已经堵死直推：`gitee_repo.py push` 不带 `--branch=` 会被拒绝，
+  只有线上出故障要立刻回滚这种急事才用 `--direct` 绕过
+
+### PR 说明写到哪
+
+仓库里有 `.gitee/PULL_REQUEST_TEMPLATE.md`：改了什么 / 为什么（关联 issue）/ 怎么验证（跑过哪些闸门、结果如何）
+—— 三项都要如实填，不跑闸门的 PR 不合并。
 
 ## GitHub 镜像
 
