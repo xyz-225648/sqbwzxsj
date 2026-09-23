@@ -2,7 +2,7 @@
 
 四个学院（信息设计 / 信息基础 / 通识教育 / 女子教育）的一日作息时间轴，**Windows 桌面版 / 安卓手机版 / 浏览器网页版** 三端通用。
 
-当前版本：**v2.2.1**
+当前版本：**v2.2.2**
 
 ## 下载使用
 
@@ -160,6 +160,13 @@ Windows：第一次发通知时会注册 `sqzy:` 协议；若被安全软件拦�
 不会。设置同时写在页面本地存储和 exe 的 `settings.json`（`/config` 接口）里，启动时以壳里的那份为准，
 所以快速重启、换端口都不会回到默认值。
 
+**校园网 / 内网下更新和下载会不会不通？**
+
+应用内下载走系统下载器**直连码云**，不受影响；受影响的只有**浏览器**路径 —— 网页版读版本走 GitHub 镜像
+（`raw.githubusercontent.com` 带 CORS 头），apk 下载走 6 条线路依次降级：`@<tag>`×3 → `@master`×2 → ghproxy，
+每条都核对 `program.txt` 里的 sha256，全不通才回退到码云附件（并提示把 `.zip` 后缀改回 `.apk`）。
+校园网下最稳的做法就是在**应用内点「一键下载安装包」**；另外镜像每 6 小时同步一次，刚发布的版本网页版最多滞后 6 小时。
+
 **为什么仓库里要放一份 apk 副本？**
 
 为了让浏览器也能下到真正的 `.apk`（见上面第一条），约 120 KB/版；exe 仍然只在发行版附件里。
@@ -202,7 +209,7 @@ Windows：第一次发通知时会注册 `sqzy:` 协议；若被安全软件拦�
    再 `python gitee_repo.py pr new fix/xxx "<标题>" <说明.md>`（说明里写清改了什么、
    怎么验证的，并关联 issue 编号）。
 5. **过门槛 + 合并**：本仓库开了「合并前必须通过审查 / 测试」，所以顺序是
-   `python gitee_repo.py pr approve <编号>`（一次点掉「审查通过」「测试通过」）->
+   `python gitee_repo.py pr approve <编号>`（一次点掉「审查通过」「测试通过」）→
    `python gitee_repo.py pr merge <编号>`。合并后在 PR 页面能看到 diff、审查与测试记录。
 6. **回 issue**：`python gitee_repo.py issue comment <编号> "<版本 + 结论>"`，
    然后 `python gitee_repo.py issue close <编号>`。
@@ -221,6 +228,7 @@ Windows：第一次发通知时会注册 `sqzy:` 协议；若被安全软件拦�
 
 仓库里有 `.gitee/PULL_REQUEST_TEMPLATE.md`：改了什么 / 为什么（关联 issue）/ 怎么验证（跑过哪些闸门、结果如何）
 —— 三项都要如实填，不跑闸门的 PR 不合并。
+
 
 ## 本地接口与安全
 
@@ -243,8 +251,9 @@ Windows：第一次发通知时会注册 `sqzy:` 协议；若被安全软件拦�
 - 老页面靠页面内的「程序本体有新版」提示（见 `program.txt`）引导到最新发行版
 - **发布顺序**：合并页面 PR → **立刻**建同名 tag / 发行版 → 上传附件。
   这样 tag 里的源码与附件是同一版，下载链接也不会指向还不存在的 tag（两个窗口期都踩过）
+- **发版后必须同步更新 README**：顶部「当前版本」要立刻改成新号，这一条已经进闸门 ——
+  `check_live.py` 会读本地 README 的版本行，和页面 `APP_VERSION` 对不上就判 FAIL（漏更新会被挡住，不靠记性）
 - 发布也走 PR：见下面「开发流程 → 发布也走 PR」
-
 ## GitHub 镜像
 
 同一份仓库在 GitHub 上也有一份：https://github.com/xyz-225648/sqbwzxsj
@@ -266,7 +275,6 @@ Windows：第一次发通知时会注册 `sqzy:` 协议；若被安全软件拦�
   （`refusing to allow a GitHub App to create or update workflow ... without workflows permission`），
   双向同步直接停摆 —— v2.2.0 发布时就踩了这一次（想把同步频率从 6 小时改成 30 分钟），
   最后只能把该文件恢复成与 GitHub 完全一致才恢复同步。真要改这个文件，得两边用**带 `workflow` 权限**的令牌分别推。
-
 ### 在 GitHub 上开发
 
 1. 照常在 GitHub 上开分支、提 PR（讨论、评审都留在 GitHub）
