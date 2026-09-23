@@ -3,12 +3,20 @@
 # 安卓 versionName）本来就要一致，exe 的属性页也跟着它走，省得单独维护一个 version_info.txt。
 # 说明：版本信息**不能**消除 SmartScreen 的「无法识别的应用」弹窗 —— 「发布者」那一栏只有代码签名能填。
 import io as _io
+def _page_file():
+    """页面文件名（P2）：本地开发叫「宿迁职业技术学院作息时间表.html」，仓库里是 index.html。
+    仓库只保留一份（避免两份内容漂移），所以这里按顺序找，clone 下来就能直接跑。"""
+    for _n in ('宿迁职业技术学院作息时间表.html', 'index.html'):
+        if os.path.exists(_n):
+            return _n
+    raise SystemExit('找不到页面文件：宿迁职业技术学院作息时间表.html 或 index.html（请在仓库根目录执行）')
+
 import re as _re
 from PyInstaller.utils.win32.versioninfo import (
     VSVersionInfo, FixedFileInfo, StringFileInfo, StringTable, StringStruct,
     VarFileInfo, VarStruct)
 
-_src = _io.open('宿迁职业技术学院作息时间表.html', encoding='utf-8').read()
+_src = _io.open(_page_file(), encoding='utf-8').read()
 _m = _re.search(r"var APP_VERSION = 'v([0-9]+)\.([0-9]+)\.([0-9]+)'", _src)
 _maj, _min, _pat = ((int(_m.group(1)), int(_m.group(2)), int(_m.group(3))) if _m else (0, 0, 0))
 # 字段按常见 Windows 软件的属性面板对齐（参考 QQ Chat Exporter 那种）：
@@ -38,7 +46,7 @@ a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
-    datas=[('宿迁职业技术学院作息时间表.html', '.')],
+    datas=[(_page_file(), '.')],
     hiddenimports=['webview.platforms.edgechromium'],
     hookspath=[],
     hooksconfig={},
