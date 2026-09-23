@@ -1114,14 +1114,14 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.2.1';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.2.2';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 安卓/桌面安装包挂在哪个发行版 tag 下：跟着本版号走（每版一个 tag，每个 tag
    只放它自己那一版的安装包，不回填旧 tag——否则 tag 与二进制对不上，见 issue IKHTOU）。
    注意：这个 tag 必须在**页面发布之前**就已存在，否则窗口期内下载按钮指向不存在的 tag。
    发布顺序：合并页面 PR → 立刻建同名 tag/发行版 → 上传附件。 */
-var RELEASE_TAG = 'v2.2.1';
+var RELEASE_TAG = 'v2.2.2';
 var latestInfo = null;
 /* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
 var SHELL_SEEN_KEY = 'sqzy-seen-shell';
@@ -1837,7 +1837,7 @@ function initSettings(){
   if (note) note.textContent = pywvReady
     ? '桌面版：走 Windows 系统通知中心，可在「设置 → 系统 → 通知」里管理。'
     : (isAndroid()
-        ? '手机版：走安卓系统通知，可在「设置 → 通知 → 本应用」里管理。'
+        ? '手机版：走安卓系统通知，可在「设置 → 通知 → 本应用」里管理。安装包优先用应用内的「一键下载安装包」——它直连码云，校园网 / 内网也稳；浏览器下载走镜像线路，不通会自动换下一条。'
         : '当前是浏览器/网页版：优先用系统通知，若未授权则显示页面内提示。');
 
   function bind(id, key, isNum){
