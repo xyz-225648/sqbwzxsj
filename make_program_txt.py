@@ -37,17 +37,27 @@ def build(html_path, ver, stamp):
     info = {'exe': ver, 'apk': ver, 'tag': tag, 't': stamp}
     path = APK_REPO_NAME % tag
     info['apkRepoPath'] = path
-    gh = 'https://raw.githubusercontent.com/xyz-225648/sqbwzxsj/' + tag + '/' + path
-    info['apkMirror'] = ['https://cdn.jsdelivr.net/gh/xyz-225648/sqbwzxsj@' + tag + '/' + path,
-                         'https://fastly.jsdelivr.net/gh/xyz-225648/sqbwzxsj@' + tag + '/' + path,
-                         'https://gcore.jsdelivr.net/gh/xyz-225648/sqbwzxsj@' + tag + '/' + path,
-                         'https://ghproxy.net/' + gh]
+    # 线路顺序：先用 tag（不可变，最稳），再用 master 兜底。
+    # 为什么要 master 兜底：tag 是**建文件之前**打的，tag 的树里永远不会有这个文件
+    # （v2.2.1 就踩了这个：@v2.2.1 永久 404，而文件早已在 master 上）。
+    # master 会随仓库变，所以页面拿到字节后**必须**核对 apkSha256 —— 校验不过就换下一条线路。
+    # ?t=<sha 前 8 位> 是给 CDN 的缓存打散键：新版本换新 URL，免得撞上 12 小时的旧缓存。
     for kind, name in BASES.items():
         info[kind + 'Url'] = base + name.replace(' ', '%20')
         local = os.path.join(os.path.dirname(os.path.abspath(html_path)), name)
         if os.path.exists(local):
             info[kind + 'Sha256'] = sha256_of(local)
             info[kind + 'Size'] = os.path.getsize(local)
+    # 线路要在 sha256 算完之后再拼（?t= 用的是 apk 的 sha 前缀，拼早了就是空的）
+    def jd(host, ref):
+        return 'https://%s/gh/xyz-225648/sqbwzxsj@%s/%s' % (host, ref, path)
+    sha8 = (info.get('apkSha256') or '')[:8]
+    info['apkMirror'] = [jd('cdn.jsdelivr.net', tag),
+                         jd('fastly.jsdelivr.net', tag),
+                         jd('gcore.jsdelivr.net', tag),
+                         jd('cdn.jsdelivr.net', 'master') + '?t=' + sha8,
+                         jd('fastly.jsdelivr.net', 'master') + '?t=' + sha8,
+                         'https://ghproxy.net/https://raw.githubusercontent.com/xyz-225648/sqbwzxsj/master/' + path]
     return info
 
 
