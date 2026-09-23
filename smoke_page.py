@@ -12,6 +12,17 @@
 用法: python smoke_page.py [本地页面路径 或 http(s) URL]
 """
 import datetime, os, re, shutil, subprocess, sys, tempfile
+
+PAGE_NAMES = ('宿迁职业技术学院作息时间表.html', 'index.html')
+
+def _page_file():
+    """页面文件名（P2）：本地开发用「宿迁职业技术学院作息时间表.html」，仓库里只保留 index.html。
+    两份内容必须一致，所以按顺序找，clone 下来也能直接跑。"""
+    for _n in (PAGE_NAMES):
+        if os.path.exists(_n):
+            return _n
+    raise SystemExit('找不到页面文件：' + ' 或 '.join(PAGE_NAMES) + '（请在仓库根目录执行）')
+
 from urllib.parse import quote
 
 try:
@@ -24,9 +35,25 @@ BROWSERS = [
     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    r"/usr/bin/microsoft-edge",
+    r"/usr/bin/google-chrome",
+    r"/usr/bin/google-chrome-stable",
+    r"/usr/bin/chromium",
+    r"/usr/bin/chromium-browser",
+    r"/snap/bin/chromium",
+    r"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    r"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
 ]
+# P4：找不到浏览器时**必须报错**，不能静默当成 PASS（否则闸门空转、发布质量无保障）
+import shutil as _shutil
+if not any(os.path.exists(_b) for _b in BROWSERS) and not any(
+        _shutil.which(_b) for _b in ('msedge', 'microsoft-edge', 'google-chrome',
+                                     'google-chrome-stable', 'chromium', 'chromium-browser')):
+    raise SystemExit('✗ 找不到任何浏览器（Edge / Chrome / Chromium）—— 渲染与交互闸门无法执行；'
+                     '装一个浏览器，或用 BROWSER=<路径> 指定后再跑（不静默 PASS）')
 
-target = sys.argv[1] if len(sys.argv) > 1 else '宿迁职业技术学院作息时间表.html'
+
+target = sys.argv[1] if len(sys.argv) > 1 else _page_file()
 if target.startswith(('http://', 'https://')):
     url = target
 elif os.path.exists(target):
