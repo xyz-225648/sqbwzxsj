@@ -11,20 +11,25 @@ from PyInstaller.utils.win32.versioninfo import (
 _src = _io.open('宿迁职业技术学院作息时间表.html', encoding='utf-8').read()
 _m = _re.search(r"var APP_VERSION = 'v([0-9]+)\.([0-9]+)\.([0-9]+)'", _src)
 _maj, _min, _pat = ((int(_m.group(1)), int(_m.group(2)), int(_m.group(3))) if _m else (0, 0, 0))
-_ver = '%d.%d.%d.0' % (_maj, _min, _pat)
+# 字段按常见 Windows 软件的属性面板对齐（参考 QQ Chat Exporter 那种）：
+#   文件说明 = 应用名；文件版本 = 四段 2.2.1.0；产品名称 = 应用名；产品版本 = 三段 2.2.1；
+#   版权 = Copyright © 年份 作者；语言 = 语言中性（LangID 0x0000 + Unicode 0x04B0）。
+#   属性面板里的「类型 / 大小 / 修改日期」是 Windows 自己算的，填不了。
+_ver4 = '%d.%d.%d.0' % (_maj, _min, _pat)
+_ver3 = '%d.%d.%d' % (_maj, _min, _pat)
 _vi = VSVersionInfo(
     ffi=FixedFileInfo(filevers=(_maj, _min, _pat, 0), prodvers=(_maj, _min, _pat, 0),
                       mask=0x3f, flags=0x0, OS=0x40004, fileType=0x1, subtype=0x0, date=(0, 0)),
-    kids=[StringFileInfo([StringTable('080404b0', [
+    kids=[StringFileInfo([StringTable('000004b0', [
         StringStruct('CompanyName', '宿迁职业技术学院作息时间表（学生自制）'),
         StringStruct('FileDescription', '宿迁职业技术学院作息时间表'),
-        StringStruct('FileVersion', _ver),
+        StringStruct('FileVersion', _ver4),
         StringStruct('InternalName', 'sqzy_schedule'),
-        StringStruct('LegalCopyright', '免费分享，可自由传播'),
+        StringStruct('LegalCopyright', 'Copyright © 2026 xyz-225648'),
         StringStruct('OriginalFilename', '宿迁职业技术学院作息时间表.exe'),
         StringStruct('ProductName', '宿迁职业技术学院作息时间表'),
-        StringStruct('ProductVersion', _ver)])]),
-        VarFileInfo([VarStruct('Translation', [2052, 1200])])])
+        StringStruct('ProductVersion', _ver3)])]),
+        VarFileInfo([VarStruct('Translation', [0, 1200])])])
 
 
 a = Analysis(
