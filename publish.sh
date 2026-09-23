@@ -6,7 +6,7 @@
 set -e
 cd "$(dirname "$0")"
 
-HTML="宿迁职业技术学院作息时间表.html"
+HTML=$( [ -f "宿迁职业技术学院作息时间表.html" ] && echo "宿迁职业技术学院作息时间表.html" || echo "index.html" )
 OUT="release"
 
 if [ ! -f "$HTML" ]; then
