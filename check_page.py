@@ -2,12 +2,20 @@
 """发布前自检：抽出页面里的内联脚本，用 node 做语法检查。
 有任何语法错误就退出码非 0 —— publish.sh 会据此拒绝发布。"""
 import io, os, re, subprocess, sys
+def _page_file():
+    """页面文件名（P2）：本地开发叫「宿迁职业技术学院作息时间表.html」，仓库里是 index.html。
+    仓库只保留一份（避免两份内容漂移），所以这里按顺序找，clone 下来就能直接跑。"""
+    for _n in ('宿迁职业技术学院作息时间表.html', 'index.html'):
+        if os.path.exists(_n):
+            return _n
+    raise SystemExit('找不到页面文件：宿迁职业技术学院作息时间表.html 或 index.html（请在仓库根目录执行）')
+
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 except Exception:
     pass
 
-path = sys.argv[1] if len(sys.argv) > 1 else '宿迁职业技术学院作息时间表.html'
+path = sys.argv[1] if len(sys.argv) > 1 else _page_file()
 src = io.open(path, encoding='utf-8').read()
 blocks = re.findall(r'<script>(.*?)</script>', src, re.S)
 print('  内联脚本块: %d 个' % len(blocks))
