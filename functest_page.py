@@ -424,6 +424,10 @@ def run_all(cdp, url, vw, vh):
 
     # ---------- 7.6 程序本体（exe/apk）版本检查 ----------
     cdp.ev('localStorage.removeItem("sqzy-seen-shell")')
+    # 页面会异步去读线上的 version.txt / program.txt，读到后会把夹具结果覆盖掉
+    # （线上一直是 v2.2.x，夹具是 v2.1.x，断言就必然失败）——这里把远端读取挡掉，保证可复现
+    cdp.ev('window.__realFetch = window.fetch; window.fetch = function(){return new Promise(function(){}); };')
+
     cdp.ev('window.SQZY_SETSHELL(null)')
     cdp.ev('window.SQZY_APPLYPROGRAM({exe:"v9.9.9", apk:"v9.9.9", tag:"v9.9.9"})')
     time.sleep(0.3)
@@ -464,6 +468,11 @@ def run_all(cdp, url, vw, vh):
           '最新' in (fresh.get('txt') or '') and fresh.get('btn') == 'none'
           and fresh.get('dlg') is False, '结果=%r' % (fresh,))
     cdp.ev('window.SQZY_SETSHELL(null)')
+
+    cdp.ev('if(window.__realFetch){window.fetch=window.__realFetch;window.__realFetch=null;}')
+    # 断言失败也不许把弹层留在页面上（滚动锁会连带毁掉后面的用例）
+    cdp.ev('(function(){document.querySelectorAll(".sheet.on .sheet-x").forEach(function(x){x.click();});return document.querySelectorAll(".sheet.on").length;})()')
+    time.sleep(0.4)
 
     # ---------- 7.5 安装包下载：浏览器也要存成 .apk（issue IKHWKA 追问） ----------
     # gitee 附件 CDN 对 apk 固定返回 application/zip（上传时指定 Content-Type 也改不了，实测过），
@@ -748,8 +757,13 @@ def main():
             if not ws_url:
                 time.sleep(0.4)
         if not ws_url:
-            print('  ⚠ 连不上浏览器调试端口，跳过交互测试')
-            return 0
+            # P4：浏览器起来了却连不上调试端口，同样是"闸门没跑"，不能当成通过（返回码 2）
+            print('  ✗ 浏览器起来了但连不上调试端口（%d）—— 交互闸门没有执行，不静默放行' % dbg)
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            return 2
         cdp = CDP(ws_url)
         cdp.send('Runtime.enable')
         cdp.send('Log.enable')
