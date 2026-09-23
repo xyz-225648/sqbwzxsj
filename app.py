@@ -12,6 +12,14 @@
 window.pywebview.api 整个暴露不出来（实测踩过）。
 """
 import base64
+def _page_file():
+    """页面文件名（P2）：本地开发叫「宿迁职业技术学院作息时间表.html」，仓库里是 index.html。
+    仓库只保留一份（避免两份内容漂移），所以这里按顺序找，clone 下来就能直接跑。"""
+    for _n in ('宿迁职业技术学院作息时间表.html', 'index.html'):
+        if os.path.exists(_n):
+            return _n
+    raise SystemExit('找不到页面文件：宿迁职业技术学院作息时间表.html 或 index.html（请在仓库根目录执行）')
+
 import http.server
 import json
 import os
@@ -30,7 +38,7 @@ import urllib.request
 
 import webview
 
-HTML_NAME = '宿迁职业技术学院作息时间表.html'
+HTML_NAME = _page_file()
 APP_TITLE = '宿迁职业技术学院作息时间表'
 # 桌面壳自己的版本号：必须和页面里的 APP_VERSION、安卓 versionName 一致。
 # 页面拿它跟仓库里的 program.txt 比，用来发现「网页是最新的、但程序本体老了」。
