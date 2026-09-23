@@ -51,7 +51,7 @@ app_v = re.search(r"var APP_VERSION = '([^']+)'", local_page.decode('utf-8')).gr
 say(live_v == app_v, '线上版本号 %s == 页面 APP_VERSION %s' % (live_v, app_v))
 
 # 发布后必须同步更新 README（用户要求，也踩过：README 落后过两版）——这里机械校验，不靠记性
-_readme = re.search(r'当前版本：\*\*(v[0-9.]+)\*\*', io.open('README.md', encoding='utf-8').read())
+_readme = re.search(r'当前版本：\*\*(v[0-9.]+)\*\*', open('README.md', encoding='utf-8').read())
 say(bool(_readme) and _readme.group(1) == app_v,
     'README 当前版本 %s == 页面 APP_VERSION %s' % ((_readme.group(1) if _readme else '没写'), app_v))
 live_prog = (get(RAW + 'program.txt') or b'').decode('utf-8').strip()
