@@ -13,7 +13,9 @@ _m = _re.search(r"var APP_VERSION = 'v([0-9]+)\.([0-9]+)\.([0-9]+)'", _src)
 _maj, _min, _pat = ((int(_m.group(1)), int(_m.group(2)), int(_m.group(3))) if _m else (0, 0, 0))
 # 字段按常见 Windows 软件的属性面板对齐（参考 QQ Chat Exporter 那种）：
 #   文件说明 = 应用名；文件版本 = 四段 2.2.1.0；产品名称 = 应用名；产品版本 = 三段 2.2.1；
-#   版权 = Copyright © 年份 作者；语言 = 中文（简体，中国）（LangID 0x0804 + Unicode 0x04B0）。
+#   版权 = **留空**（保留键、值为空串：属性面板会显示「版权」这一行但没有内容，跟参考的那份一致）；
+#     留空只是不写这一栏，LICENSE 文件里的 MIT 许可照旧生效。
+#   语言 = 中文（简体，中国）（LangID 0x0804 + Unicode 0x04B0）。
 #   公司名称**故意不写**：留空时属性面板不显示这一行（跟参考的那份一样），比写一串自造的组织名干净。
 #   属性面板里的「类型 / 大小 / 修改日期」是 Windows 自己算的，填不了。
 _ver4 = '%d.%d.%d.0' % (_maj, _min, _pat)
@@ -25,7 +27,7 @@ _vi = VSVersionInfo(
         StringStruct('FileDescription', '宿迁职业技术学院作息时间表'),
         StringStruct('FileVersion', _ver4),
         StringStruct('InternalName', 'sqzy_schedule'),
-        StringStruct('LegalCopyright', 'Copyright © 2026 xyz-225648'),
+        StringStruct('LegalCopyright', ''),
         StringStruct('OriginalFilename', '宿迁职业技术学院作息时间表.exe'),
         StringStruct('ProductName', '宿迁职业技术学院作息时间表'),
         StringStruct('ProductVersion', _ver3)])]),
