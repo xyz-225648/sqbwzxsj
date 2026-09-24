@@ -74,7 +74,7 @@ assert('周六 18:30 → 休息(free)', stAt(0, '18:30').cat === 'free');
 assert('周六 19:30 → 已关寝(closed)', stAt(0, '19:30').cat === 'closed');
 useTemplate(SU);
 assert('周日上午 10:00 → 休息(free)', stAt(1, '10:00').cat === 'free');
-assert('周日 18:00 → 晚休(eve)', stAt(0, '18:00').cat === 'eve');
+assert('周日 18:00 → 休息(free，已按用户规则与早上休息合并)', stAt(0, '18:00').cat === 'free');
 assert('周日 18:40 → 晚一(night)', stAt(0, '18:40').cat === 'night');
 assert('周日 21:20 → 就寝准备(prep)', stAt(2, '21:20').cat === 'prep');
 useTemplate(HT);
