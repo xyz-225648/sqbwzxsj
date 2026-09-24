@@ -11,11 +11,11 @@ import base64, io, json, mimetypes, os, sys, time, urllib.error, urllib.parse, u
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 TOK = io.open('.github_token', encoding='utf-8').read().strip()
 OWNER, REPO = 'xyz-225648', 'sqbwzxsj'
-TAGS = ['v1.0', 'v2.0.1', 'v2.1.0', 'v2.1.1', 'v2.1.2', 'v2.1.3', 'v2.2.0', 'v2.2.1', 'v2.2.2', 'v2.3.0', 'v2.3.1', 'v2.3.2', 'v2.3.3', 'v2.3.4', 'v2.3.5']   # 最后一个当"最新版"，附件挂在它上面
+TAGS = ['v1.0', 'v2.0.1', 'v2.1.0', 'v2.1.1', 'v2.1.2', 'v2.1.3', 'v2.2.0', 'v2.2.1', 'v2.2.2', 'v2.3.0', 'v2.3.1', 'v2.3.2', 'v2.3.3', 'v2.3.4', 'v2.3.5', 'v2.3.6']   # 最后一个当"最新版"，附件挂在它上面
 LATEST = TAGS[-1]
 # 附件名用 ASCII：GitHub 会把非 ASCII 名字削成 default.exe / -.png（踩过）
-ASSETS = [('宿迁职业技术学院作息时间表.exe', 'sqzy-timetable-v2.3.5-windows.exe'),
-          ('宿迁职业技术学院作息时间表.apk', 'sqzy-timetable-v2.3.5-android.apk'),
+ASSETS = [('宿迁职业技术学院作息时间表.exe', 'sqzy-timetable-v2.3.6-windows.exe'),
+          ('宿迁职业技术学院作息时间表.apk', 'sqzy-timetable-v2.3.6-android.apk'),
           ('宿迁职业技术学院作息时间表.png', 'sqzy-timetable-desktop.png'),
           ('宿迁职业技术学院作息时间表-手机版.png', 'sqzy-timetable-mobile.png')]
 NOTE = ('> 本仓库是 [Gitee 主仓库](https://gitee.com/xyz-225648/sqbwzxsj) 的镜像，'
