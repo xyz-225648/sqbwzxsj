@@ -7,6 +7,9 @@ set -e
 cd "$(dirname "$0")"
 
 HTML=$( [ -f "宿迁职业技术学院作息时间表.html" ] && echo "宿迁职业技术学院作息时间表.html" || echo "index.html" )
+echo "  逻辑断言（周六/周日/放假/优先级 30 条）..."
+node verify_schedule.js >/dev/null || { echo "  ✗ 逻辑断言未通过"; exit 1; }
+
 OUT="release"
 
 if [ ! -f "$HTML" ]; then

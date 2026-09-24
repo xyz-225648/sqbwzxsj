@@ -164,6 +164,7 @@ if (/Android/i.test(navigator.userAgent || '')) document.documentElement.setAttr
   .bar.pm{background:var(--pm)}
   .bar.eve{background:var(--eve)}
   .bar.night{background:var(--night)}
+  .bar.free{background:#e2e8f0;color:#94a3b8;box-shadow:none}
   .bar.now{outline:3px solid var(--now);outline-offset:2px;animation:pulse 2.2s ease-in-out infinite}
   @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(225,29,72,.42)}50%{box-shadow:0 0 0 7px rgba(225,29,72,0)}}
   .close-line{position:absolute;top:2px;bottom:2px;width:0;border-left:2px dotted var(--close);opacity:.75;z-index:2}
@@ -236,6 +237,10 @@ if (/Android/i.test(navigator.userAgent || '')) document.documentElement.setAttr
   .vtl .dot{position:absolute;left:-6px;top:4px;width:10px;height:10px;border-radius:50%;background:#cbd5e1;box-shadow:0 0 0 3px #fff}
   .vtl .d-am{background:var(--am)} .vtl .d-noon{background:var(--noon)} .vtl .d-pm{background:var(--pm)}
   .vtl .d-eve{background:var(--eve)} .vtl .d-night{background:var(--night)} .vtl .d-close{background:var(--close)}
+  .vtl .d-free{background:#cbd5e1}
+  .vtl li.rest{color:#94a3b8}
+  .vtl li.rest .time{font-weight:400;font-size:12px}
+  .vtl li.rest .lbl{color:#94a3b8}
   .vtl .time{display:block;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.2px}
   .vtl .lbl{display:block;font-size:11.5px;color:var(--ink2);margin-top:1px}
   .vtl .dur{font-style:normal;font-weight:400;font-size:11px;color:#94a3b8;letter-spacing:0}
@@ -276,6 +281,7 @@ if (/Android/i.test(navigator.userAgent || '')) document.documentElement.setAttr
           box-shadow:0 1px 3px rgba(15,23,42,.16);z-index:1}
   .vt-blk.am{background:var(--am)} .vt-blk.noon{background:var(--noon)} .vt-blk.pm{background:var(--pm)}
   .vt-blk.eve{background:var(--eve)} .vt-blk.night{background:var(--night)}
+  .vt-blk.free{background:#e2e8f0;color:#94a3b8;box-shadow:none}
   .vt-blk.now{outline:3px solid var(--now);outline-offset:1px;animation:pulse 2.2s ease-in-out infinite}
   .vt-blk.hot{outline:3px solid var(--pin);outline-offset:1px}
   .vt-close{position:absolute;left:0;right:0;border-top:2px dotted var(--close);opacity:.75;z-index:2}
@@ -431,7 +437,7 @@ var SHORT = {'第一节课':'1','第二节课':'2','第三节课':'3','第四节
              '晚一':'晚1','晚二':'晚2','晚三':'晚3'};
 var CATNAME = {am:'上午正课', noon:'午休', pm:'下午正课', eve:'晚休', night:'晚自习', close:'关寝'};
 
-var TRACKS = [
+var WEEKDAY_TRACKS = [
   { name:'信息设计', close:'21:30', accent:'#2563eb', ink:'#ffffff', flash:'rgba(37,99,235,.42)',
     head:'linear-gradient(135deg,#1d4ed8,#3b82f6)',
     times:['8:00-8:45','8:55-9:40','9:50-10:35','10:45-11:30','11:30-14:00','14:00-14:45','14:55-15:40','15:50-16:35','16:45-17:30','17:30-18:30','18:30-19:15','19:25-20:10','20:20-21:00'] },
@@ -446,11 +452,105 @@ var TRACKS = [
     times:['8:00-8:45','8:55-9:40','9:50-10:35','10:45-11:30','11:30-13:40','13:40-14:25','14:35-15:20','15:30-16:15','16:25-17:10','17:10-18:00','18:00-18:45','18:55-19:40','19:50-20:40'] }
 ];
 
-/* 某方向全天连续片段（含课间空档） */
+/* ===================== 多套作息模板 =====================
+   基础数据：工作日(周一~五)沿用 WEEKDAY_TRACKS；
+   周六全校统一上午半天课（通识教育也按同一套时间），午休后休息到 19:00 关寝；
+   周日白天不进班，晚休 / 晚自习沿用周内时间，关寝沿用各学院周内时间；
+   holiday 由特殊日表 SPECIAL 触发，全天休息，19:00 关寝。
+   rest 数组标记"休息行"（行索引对应 ROWS，0~12）：休息行照常渲染但不倒计时、不发通知。 */
+var SAT_TIMES = ['8:00-8:45','8:55-9:40','9:50-10:35','10:45-11:30','11:30-14:00',
+                 '14:00-19:00','14:00-19:00','14:00-19:00','14:00-19:00','14:00-19:00',
+                 '14:00-19:00','14:00-19:00','14:00-19:00'];
+var SATURDAY_TRACKS = WEEKDAY_TRACKS.map(function(t){
+  return { name:t.name, close:'19:00', accent:t.accent, ink:t.ink, flash:t.flash, head:t.head,
+           rest:[5,6,7,8,9,10,11,12], times:SAT_TIMES.slice() };
+});
+var SUNDAY_TRACKS = WEEKDAY_TRACKS.map(function(t){
+  var times = t.times.slice();
+  var eveStart = times[9].split('-')[0];            /* 白天休息到本学院晚休开始 */
+  for (var i = 0; i <= 8; i++) times[i] = '7:30-' + eveStart;
+  return { name:t.name, close:t.close, accent:t.accent, ink:t.ink, flash:t.flash, head:t.head,
+           rest:[0,1,2,3,4,5,6,7,8], times:times };
+});
+var HOLIDAY_TIMES = ['7:30-19:00','7:30-19:00','7:30-19:00','7:30-19:00','7:30-19:00',
+                     '7:30-19:00','7:30-19:00','7:30-19:00','7:30-19:00','7:30-19:00',
+                     '7:30-19:00','7:30-19:00','7:30-19:00'];
+var HOLIDAY_TRACKS = WEEKDAY_TRACKS.map(function(t){
+  return { name:t.name, close:'19:00', accent:t.accent, ink:t.ink, flash:t.flash, head:t.head,
+           rest:[0,1,2,3,4,5,6,7,8,9,10,11,12], times:HOLIDAY_TIMES.slice() };
+});
+var SCHEDULES = {
+  weekday:  { label:'周一至周五 · 常规', tracks:WEEKDAY_TRACKS },
+  saturday: { label:'周六 · 半天课（19:00 关寝）', tracks:SATURDAY_TRACKS },
+  sunday:   { label:'周日 · 白天休息（晚自习照常）', tracks:SUNDAY_TRACKS },
+  holiday:  { label:'放假 · 全天休息（19:00 关寝）', tracks:HOLIDAY_TRACKS }
+};
+
+/* ===================== 特殊日覆盖表 =====================
+   节假日 / 调休等特殊情况的唯一维护入口。
+   键为"年-月-日"，值为 SCHEDULES 里的模板名；
+   命中后优先级高于星期规则。
+   示例（按学校实际校历填写，本表默认空，不启用任何特殊日）：
+     '2026-10-01': 'holiday',    // 国庆放假
+     '2026-10-10': 'weekday',    // 调休补课，按工作日作息
+   每学年开学前把本学年法定节假日 + 调休补课日写进来即可；
+   突发临时调整（放假 / 停课）当天加一行 + 更新 version.txt，
+   走现有自动更新机制全网生效。 */
+var SPECIAL = {};
+/* ===== 特殊日表改为读仓库文件 calendar.txt（改良版）=====
+   以前特殊日写在页面里，每年放假表/每次临时调休都要改页面 + 发版；现在只改仓库里这一个 txt，
+   不用动页面、不用 bump 版本。格式（每行一条，# 注释）：
+       2026-10-01 holiday 国庆
+       2026-01-20~2026-02-25 holiday 寒假
+       2026-10-10 weekday 调休补课
+   模板名：weekday 周内 / saturday 周六(半天课) / sunday 周日 / holiday 放假；区间在加载时展开成逐日。 */
+var SPECIAL_RANGES = [], CAL_META = { ok: null, count: 0, bad: 0 };
+function calKey(d){
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+}
+function parseCalendar(text){
+  var table = {}, bad = 0;
+  String(text || '').split(/\r?\n/).forEach(function(raw){
+    var line = raw.replace(/#.*$/, '').trim();
+    if (!line) return;
+    var parts = line.split(/[\s,，]+/), key = parts[0], tpl = (parts[1] || '').toLowerCase();
+    if (!/^\d{4}-\d{2}-\d{2}(~\d{4}-\d{2}-\d{2})?$/.test(key) || !SCHEDULES[tpl]){ bad++; return; }
+    if (key.indexOf('~') < 0){ table[key] = tpl; return; }
+    var a = key.split('~'), d1 = new Date(a[0] + 'T00:00:00'), d2 = new Date(a[1] + 'T00:00:00');
+    if (isNaN(d1) || isNaN(d2) || d2 < d1){ bad++; return; }
+    for (var d = new Date(d1), g = 0; d <= d2 && g < 400; d.setDate(d.getDate() + 1), g++) table[calKey(d)] = tpl;
+  });
+  return { table: table, bad: bad };
+}
+function applyCalendar(text){
+  var r = parseCalendar(text || '');
+  SPECIAL = r.table;
+  CAL_META = { ok: !!text, count: Object.keys(r.table).length, bad: r.bad };
+  try { applySchedule(); } catch(e){}
+  return CAL_META;
+}
+function todayOverride(){
+  try { var v = safeGet('sqzy-today') || 'auto'; return (v === 'auto') ? '' : v; } catch(e){ return ''; }
+}
+
+
+/* 解析某天生效的作息模板：特殊日表优先，其次按星期，最后默认工作日 */
+function resolveSchedule(d){
+  var _ov = todayOverride();
+  if (_ov && SCHEDULES[_ov]) return SCHEDULES[_ov];   /* 手动覆盖优先 */
+  var M = d.getMonth() + 1, D = d.getDate();
+  var k = d.getFullYear() + '-' + (M < 10 ? '0' + M : M) + '-' + (D < 10 ? '0' + D : D);
+  if (SPECIAL[k] && SCHEDULES[SPECIAL[k]]) return SCHEDULES[SPECIAL[k]];
+  var wd = d.getDay();
+  return SCHEDULES[wd === 0 ? 'sunday' : wd === 6 ? 'saturday' : 'weekday'];
+}
+
+/* 某方向全天连续片段（含课间空档）；rest 标记的行是休息段（cat:'free'） */
 function buildSegments(t){
   var raw = ROWS.map(function(r, j){
     var se = t.times[j].split('-');
-    return { s:toMin(se[0]), e:toMin(se[1]), label:r, cat:CAT[r], row:j };
+    var rest = !!(t.rest && t.rest.indexOf(j) >= 0);
+    return { s:toMin(se[0]), e:toMin(se[1]), label:rest ? '休息' : r, cat:rest ? 'free' : CAT[r], row:j };
   });
   var out = [];
   for (var i = 0; i < raw.length; i++){
@@ -460,7 +560,23 @@ function buildSegments(t){
   }
   return out;
 }
-var SEGS = TRACKS.map(buildSegments);
+var SEGS = WEEKDAY_TRACKS.map(buildSegments);
+var TRACKS = WEEKDAY_TRACKS;   /* 全局生效作息：applySchedule() 每天按模板重赋值，下游全部读取它 */
+
+/* 把全局 TRACKS / SEGS 切换为当天生效模板。
+   下游所有渲染 / 倒计时 / 悬停 / 通知都读这两个全局变量，切换后自动生效；
+   返回 true 表示日期已切换（调用方据此决定是否重绘甘特图等静态部分）。 */
+var _curDay = '';
+function applySchedule(){
+  var d = new Date();
+  var key = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+  if (key === _curDay) return false;
+  _curDay = key;
+  var s = resolveSchedule(d);
+  TRACKS = s.tracks;
+  SEGS = TRACKS.map(buildSegments);
+  return true;
+}
 
 /* 某一时刻该方向在做什么 */
 function stateAt(i, m){
@@ -486,7 +602,7 @@ function leftText(mins){
 }
 function countdown(i, m, secNow){
   var st = stateAt(i, m);
-  if (st.cat === 'off' || st.cat === 'closed') return null;
+  if (st.cat === 'off' || st.cat === 'closed' || st.cat === 'free') return null;
   var secs;
   if (st.cat === 'prep'){
     secs = toMin(TRACKS[i].close) * 60 - secNow;
@@ -590,6 +706,7 @@ var gGrid, laneAreas = [], laneRows = [], laneBars = [], guideEl, guideBubble, g
 
 function renderGantt(){
   gGrid = document.getElementById('gGrid');
+  gGrid.innerHTML = '';   /* 重绘（日期切换）前清空，避免重复累积 */
   var h = '<div class="g-row g-head"><div class="g-name"></div><div class="g-area">';
   for (var hr = 8; hr <= 22; hr++){
     var p = pct(hr*60);
@@ -604,8 +721,9 @@ function renderGantt(){
       if (hr < 22) h += '<i class="grid" style="left:' + pct(hr*60+30) + '%"></i>';
     }
     ROWS.forEach(function(r, j){
+      var rest = !!(t.rest && t.rest.indexOf(j) >= 0);
       var se = t.times[j].split('-'), s = toMin(se[0]), e = toMin(se[1]);
-      h += '<div class="bar ' + CAT[r] + '" style="left:' + pct(s) + '%;width:' + (pct(e)-pct(s)) + '%"><span>' + SHORT[r] + '</span></div>';
+      h += '<div class="bar ' + (rest ? 'free' : CAT[r]) + '" style="left:' + pct(s) + '%;width:' + (pct(e)-pct(s)) + '%"><span>' + (rest ? '休' : SHORT[r]) + '</span></div>';
     });
     var cp = pct(toMin(t.close));
     h += '<i class="close-line" style="left:' + cp + '%"></i><i class="close-dot" style="left:' + cp + '%"></i>';
@@ -641,11 +759,12 @@ function renderCards(){
   var el = document.getElementById('cards');
   el.innerHTML = TRACKS.map(function(t){
     var items = ROWS.map(function(r, j){
+      var rest = !!(t.rest && t.rest.indexOf(j) >= 0);
       var se = t.times[j].split('-').map(toMin);
       var span = dur(se[1] - se[0]);
-      return '<li><i class="dot d-' + CAT[r] + '"></i>'
-           + '<span class="time">' + t.times[j] + '<i class="dur">（' + span + '）</i></span>'
-           + '<span class="lbl">' + r + '</span></li>';
+      return '<li' + (rest ? ' class="rest"' : '') + '><i class="dot d-' + (rest ? 'free' : CAT[r]) + '"></i>'
+           + '<span class="time">' + (rest ? '休息' : t.times[j] + '<i class="dur">（' + span + '）</i>') + '</span>'
+           + '<span class="lbl">' + (rest ? '休息' : r) + '</span></li>';
     }).join('');
     var closeLi = '<li class="hl"><i class="dot d-close"></i><span class="time">' + t.close + '</span><span class="lbl">关寝</span></li>';
     return '<div class="card" style="--flash:' + t.flash + '"><div class="card-h" style="background:' + t.head + ';color:' + t.ink + '">' +
@@ -676,9 +795,9 @@ function renderNow(){
             '</div>';
   });
   html += '</div>';
-  var wd = d.getDay();
-  if (wd === 0 || wd === 6){
-    html += '<div class="daynote">今天是' + (wd === 0 ? '周日' : '周六') + '，以下为常规教学日作息，请以学校实际安排为准。</div>';
+  var sched = resolveSchedule(d);
+  if (sched !== SCHEDULES.weekday){
+    html += '<div class="daynote">今日：' + sched.label + '，请以学校实际安排为准。</div>';
   }
   document.getElementById('nowBar').innerHTML = html;
 
@@ -896,9 +1015,10 @@ function renderVertical(){
 
   vtPlot.innerHTML = TRACKS.map(function(t, i){
     var blocks = ROWS.map(function(r, j){
+      var rest = !!(t.rest && t.rest.indexOf(j) >= 0);
       var se = t.times[j].split('-').map(toMin);
-      return '<div class="vt-blk ' + CAT[r] + '" style="top:' + pct(se[0]) + '%;height:' +
-             ((se[1] - se[0]) / SPAN * 100) + '%">' + SHORT[r] + '</div>';
+      return '<div class="vt-blk ' + (rest ? 'free' : CAT[r]) + '" style="top:' + pct(se[0]) + '%;height:' +
+             ((se[1] - se[0]) / SPAN * 100) + '%">' + (rest ? '休' : SHORT[r]) + '</div>';
     }).join('');
     var cp = pct(toMin(t.close));
     return '<div class="vt-col" data-track="' + i + '">' + blocks +
@@ -1114,14 +1234,14 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.2.2';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.3.0';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 安卓/桌面安装包挂在哪个发行版 tag 下：跟着本版号走（每版一个 tag，每个 tag
    只放它自己那一版的安装包，不回填旧 tag——否则 tag 与二进制对不上，见 issue IKHTOU）。
    注意：这个 tag 必须在**页面发布之前**就已存在，否则窗口期内下载按钮指向不存在的 tag。
    发布顺序：合并页面 PR → 立刻建同名 tag/发行版 → 上传附件。 */
-var RELEASE_TAG = 'v2.2.2';
+var RELEASE_TAG = 'v2.3.0';
 var latestInfo = null;
 /* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
 var SHELL_SEEN_KEY = 'sqzy-seen-shell';
@@ -1350,7 +1470,7 @@ function showUpdateDialog(info){
 
   var note = document.createElement('div');
   note.className = 'setnote';
-  note.textContent = '电脑版：网页内容会自动更新，无需操作。手机版：点下面按钮下载新版 apk，覆盖安装即可（不会丢数据）。';
+  note.textContent = '电脑版：网页内容会自动更新，无需操作。手机版点下面按钮下载新版 apk（电脑版不用点，页面内容会自动更新），覆盖安装即可（不会丢数据）。';
 
   var apk = document.createElement('a');
   apk.className = 'settest';
@@ -1362,7 +1482,7 @@ function showUpdateDialog(info){
   apk.href = apk.getAttribute('data-url');
   apk.target = '_blank';
   apk.rel = 'noopener';
-  apk.textContent = isAndroid() ? '一键下载安装包' : '下载安卓新版';
+  apk.textContent = isAndroid() ? '一键下载安装包' : '去发行版页面看看';
   if (isAndroid()){
     apk.textContent = '一键下载安装包（存成 .apk）';
     apk.href = 'javascript:void 0';
@@ -1380,6 +1500,17 @@ function showUpdateDialog(info){
   later.textContent = '稍后再说';
 
   card.appendChild(head); card.appendChild(body); card.appendChild(note);
+    /* 桌面版：按钮直连"一键更新"（下载→校验→退出替换→重启）；只有确实落后于发布版本时才提供 */
+  if (!isAndroid()){
+    var _behind = !!(programInfo && programInfo.exe && verNum(programInfo.exe) > verNum(shellVer || 'v0.0.0'));
+    apk.textContent = _behind ? '一键更新（下载完自动替换重启）' : '去发行版页面看看';
+    apk.href = 'javascript:void 0';
+    apk.onclick = function(ev){
+      ev.preventDefault();
+      if (_behind) downloadExeSmart(programInfo);
+      else openExternal(shellDownloadUrl(programInfo || latestInfo));
+    };
+  }
   card.appendChild(apk); card.appendChild(later);
   wrap.appendChild(card);
   document.body.appendChild(wrap);
@@ -1435,6 +1566,29 @@ function shellDownloadUrl(info){
   var tag = (info && info.tag) || RELEASE_TAG;
   return 'https://gitee.com/xyz-225648/sqbwzxsj/releases/tag/' + tag;
 }
+/* 桌面版一键更新：走本地壳的 /download（下载+校验 sha256）→ /apply（退出后自我替换并重启）。
+   与安卓的「一键下载安装包」对应 —— 电脑上也能点一下就换好，不用自己去找安装包。 */
+function downloadExeSmart(info){
+  var base = apiBase();
+  var want = normVer((info && info.exe) || (info && info.v) || '');
+  var url = shellAssetUrl(info || {}, 'exe');
+  if (!base){ openExternal(shellDownloadUrl(info)); return; }
+  inPageToast('正在下载新版程序…', '下载完会先核对 sha256，再退出替换并自动重启');
+  var q = '/download?' + apiQs() + '&url=' + encodeURIComponent(url) + '&v=' + encodeURIComponent(want)
+        + ((info && info.exeSha256) ? '&sha256=' + encodeURIComponent(info.exeSha256) : '');
+  fetch(base + q).then(function(r){ return r.json(); }).then(function(o){
+    if (!o || !o.ok) throw new Error((o && o.msg) || '下载失败');
+    inPageToast('校验通过，正在替换…', '程序会退出一下，然后自动回来（课表和设置都不会丢）');
+    return fetch(base + '/apply?' + apiQs()).then(function(r){ return r.json(); }).then(function(a){
+      if (!a || !a.ok) throw new Error((a && a.msg) || '替换失败');
+      inPageToast('更新已就绪', '程序马上退出替换，几秒后自动重启');
+    });
+  }).catch(function(err){
+    inPageToast('一键更新没成功', String((err && err.message) || err) + '；已改成打开发行版页面');
+    openExternal(shellDownloadUrl(info));
+  });
+}
+
 function apkMirrors(info){
   /* 让浏览器也能下到 .apk（issue IKHWKA 追问）：
      gitee 附件 CDN 对 apk 固定返回 Content-Type: application/zip，手机浏览器按 MIME 补后缀
@@ -1553,6 +1707,7 @@ function renderShellNote(text, hi, url){
     btn.onclick = url ? function(){
       /* 安卓上别把人送去 gitee 附件（会被改名成 .apk.zip），直接走能定文件名的下载 */
       if (isAndroid() && shellKey() === 'apk') downloadApkSmart(programInfo || latestInfo);
+      else if (!isAndroid() && programInfo && programInfo.exe && verNum(programInfo.exe) > verNum(shellVer || 'v0.0.0')) downloadExeSmart(programInfo);
       else openExternal(url);
     } : null;
   }
@@ -1651,6 +1806,12 @@ function checkShellProgram(manual){
   });
 }
 function applyUpdateInfo(info, manual){
+  /* 只比"更新"，不比"不同"：本地版本比线上新时（比如手上拿了新构建、镜像还没同步）
+     不该提示"有新版本"，更不该把人引导去装更旧的包 */
+  if (info && info.v && verNum(info.v) <= verNum(APP_VERSION)){
+    if (manual) inPageToast('已是最新版本', '你本地是 ' + APP_VERSION + '，不比线上的 ' + info.v + ' 旧');
+    return;
+  }
   latestInfo = info;
   renderAbout();
   if (!info || !info.v){
@@ -1708,7 +1869,7 @@ function segAtMin(i, m){
   for (var k = 0; k < segs.length; k++) if (m >= segs[k].s && m < segs[k].e) return segs[k];
   return null;
 }
-function isClassSeg(g){ return !!g && ['gap','noon','eve'].indexOf(g.cat) < 0; }
+function isClassSeg(g){ return !!g && ['gap','noon','eve','free'].indexOf(g.cat) < 0; }
 function fireNotify(i, m, kind, title, body){
   /* 键里必须带日期：否则今天发过之后，明天同一时刻会被当成重复而不再提醒 */
   var today = new Date();
@@ -1808,6 +1969,15 @@ function initSettings(){
         'OPPO/一加＝设置→电池→应用耗电管理→允许后台运行并允许自启动；vivo＝设置→电池→后台高耗电→允许；' +
         '其他＝设置→应用→本应用→省电策略→「无限制」。设完回到本页会重新检测。</div>' +
       '</div>' +
+      '<div class="setsec">今天按哪套作息</div>' +
+      '<div class="setrow"><label>今天按：<select id="setToday" style="margin-left:6px">' +
+        '<option value="auto">自动（按日期规则）</option>' +
+        '<option value="weekday">周内作息</option>' +
+        '<option value="saturday">周六（半天课）</option>' +
+        '<option value="sunday">周日</option>' +
+        '<option value="holiday">放假（全天休息）</option>' +
+      '</select></label></div>' +
+      '<div class="setnote" id="calNote"></div>' +
       '<button class="settest" id="setTest" type="button">发一条测试通知</button>' +
       '<div class="setnote" id="setNote"></div>' +
       '<div class="setsec">关于</div>' +
@@ -2154,6 +2324,7 @@ function bootStep(name, fn){
     if (window.console && console.error) console.error('[启动失败] ' + name, e);
   }
 }
+bootStep('当日作息', applySchedule);
 bootStep('甘特总览', renderGantt);
 bootStep('分方向时间轴', renderCards);
 bootStep('设备识别', initDevice);
@@ -2178,11 +2349,326 @@ bootStep('置顶快捷键', function(){
 });
 bootStep('防调试', bindProtect);
 bootStep('当前状态', renderNow);
-setInterval(function(){ bootStep('当前状态', renderNow); }, 20000);
-document.addEventListener('visibilitychange', function(){ if (!document.hidden) bootStep('当前状态', renderNow); });
+/* 日期切换（跨天 / 进入节假日等）时重绘甘特图、卡片、竖版时间轴；否则只刷新当前状态 */
+function rerenderSchedule(){
+  if (!applySchedule()) return;
+  bootStep('甘特总览', renderGantt);
+  bootStep('分方向时间轴', renderCards);
+  bootStep('竖版时间轴', renderVertical);
+  bootStep('当前状态', renderNow);
+}
+setInterval(rerenderSchedule, 20000);
+document.addEventListener('visibilitychange', function(){ if (!document.hidden) rerenderSchedule(); });
 
 /* 调试/外部调用入口 */
 window.SQTC = { showGuide:showGuide, hideGuide:hideGuide, pinAt:pinAt, unpin:unpin, applyDevice:applyDevice, renderNow:renderNow, relayout:relayout, vtPinAt:vtPinAt, vtUnpin:vtUnpin };
+
+/* ===== 改良版装配（放主脚本末尾，不依赖内部函数位置）===== */
+(function(){
+  function boot(){
+    try{
+      var sel = document.getElementById('setToday');
+      if (sel){
+        sel.value = (safeGet('sqzy-today') || 'auto');
+        sel.addEventListener('change', function(){
+          safeSet('sqzy-today', sel.value);
+      if (typeof setToday === 'function') { setToday(sel.value, false); return; }
+          try { applySchedule(); } catch(e){}
+          var o = sel.options[sel.selectedIndex], txt = o ? o.textContent : sel.value;
+          try { inPageToast('今天按：' + txt, sel.value === 'auto' ? '回到按日期规则自动判断' : '只影响本机，立即生效'); } catch(e){}
+        });
+      }
+      if (typeof readRemoteText === 'function'){
+        readRemoteText('calendar.txt', function(text){
+          var meta = applyCalendar(text);
+          var note = document.getElementById('calNote');
+          if (note){
+            note.textContent = meta.ok
+              ? ('特殊日表已加载：' + meta.count + ' 天' + (meta.bad ? '（跳过 ' + meta.bad + ' 行没看懂的）' : '') + ' —— 维护入口是仓库里的 calendar.txt，改它不用发新版。')
+              : '特殊日表没读到（网络或还没建这个文件）—— 已按「周末规则 + 手动覆盖」正常工作。';
+          }
+        });
+      } else { applyCalendar(''); }
+    } catch(e){}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else setTimeout(boot, 0);
+})();
+
+/* ===== 页头「今天按」下拉（改良版：用户要求放在置顶/设置/切换横竖版 旁边）=====
+   为什么放这里：临时停课/调休时用户第一眼就能看到并一键切换，不用翻设置面板。 */
+function setToday(v, showToast){
+  try { safeSet('sqzy-today', v || 'auto'); } catch(e){}
+  try { applySchedule(); } catch(e){}
+  var a = document.getElementById('setToday'), b = document.getElementById('setTodayTop');
+  if (a) a.value = v || 'auto';
+  if (b) b.value = v || 'auto';
+  if (showToast){
+    var names = { auto:'自动（按日期规则）', weekday:'周内作息', saturday:'周六（半天课）', sunday:'周日', holiday:'放假（全天休息）' };
+    try { inPageToast('今天按：' + (names[v] || v), (v === 'auto') ? '回到按日期规则自动判断' : '只影响本机，立即生效'); } catch(e){}
+  }
+
+  /* 关键：当天作息是"按日期解析 + 当日缓存"的，光改覆盖值不会让缓存失效 ——
+     所以这里强制整页重载一次，让 resolveSchedule 按新的覆盖值重新解析。
+     （重载后页头下拉会保持刚才选的项，设置面板里的也同步。） */
+  setTimeout(function(){ try { location.reload(); } catch(e){} }, 500);
+}
+(function(){
+  function boot(){
+    try{
+      var box = document.querySelector('.devbox');
+      if (!box || document.getElementById('setTodayTop')) return;
+      var wrap = document.createElement('span');
+      wrap.style.cssText = 'display:inline-flex;align-items:center;gap:6px;margin:6px 0 0 6px';
+      var lab = document.createElement('span');
+      lab.textContent = '今天按';
+      lab.style.cssText = 'font-size:12px;color:#c7d2fe;white-space:nowrap';
+      var sel = document.createElement('select');
+      sel.id = 'setTodayTop';
+      sel.className = 'setbtn';
+      sel.style.cssText = 'padding:3px 8px;font-size:12px;cursor:pointer';
+      [['auto','自动（按日期规则）'],['weekday','周内作息'],['saturday','周六（半天课）'],['sunday','周日'],['holiday','放假（全天休息）']]
+        .forEach(function(p){ var o = document.createElement('option'); o.value = p[0]; o.textContent = p[1]; sel.appendChild(o); });
+      sel.value = (safeGet('sqzy-today') || 'auto');
+      sel.addEventListener('change', function(){ setToday(sel.value, true); });
+      wrap.appendChild(lab); wrap.appendChild(sel);
+      box.appendChild(wrap);
+    }catch(e){}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else setTimeout(boot, 0);
+})();
+
+/* ===== 休息段合并显示（用户要求：休息只保留一条，不要整屏都是休息）=====
+   做法：渲染完成后扫一遍列表，同一个列表里连续出现的"休息"行只留第一条，其余隐藏。
+   为什么不去改解析：时段索引被甘特图/倒计时/通知多处引用，动数据风险大；这里只影响显示。 */
+(function(){
+  function isRestRow(el){
+    if (!el || el.children.length > 2) return false;
+    var t = (el.textContent || '').replace(/\s+/g, '');
+    if (!t || t.length > 40) return false;
+    if (/第[一二三四五六七八九十]节/.test(t)) return false;
+    return t.indexOf('休息') === 0;
+  }
+  function mergeRests(){
+    try{
+      var all = document.querySelectorAll('li,div,tr,p,section,article');
+      var lastBox = null;
+      for (var i = 0; i < all.length; i++){
+        var el = all[i];
+        if (!isRestRow(el)) continue;
+        if (el.parentNode === lastBox){ el.style.display = 'none'; }
+        else { el.style.display = ''; lastBox = el.parentNode; }
+      }
+    }catch(e){}
+  }
+  window.SQZY_MERGE_RESTS = mergeRests;
+  function boot(){ mergeRests(); setInterval(mergeRests, 1000); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else setTimeout(boot, 0);
+})();
+
+/* ===== 手动覆盖时，提示条写清楚（用户要求）=====
+   自动：保持原来的「今日：周日 · 白天休息（晚自习照常），请以学校实际安排为准。」
+   手动：改成「今日是周日，你选择了周日时间 · 白天休息（晚自习照常），请以学校实际安排为准。」
+   做法：只改那一条提示元素的文字，复用作者原本的描述文案（从现有文本里取 · 之后那一段）。 */
+(function(){
+  var NAMES = { weekday: '周内', saturday: '周六', sunday: '周日', holiday: '放假' };
+  var WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  function pick(){
+    var all = document.querySelectorAll('div,p,span,section');
+    for (var i = 0; i < all.length; i++){
+      var el = all[i];
+      if (el.children.length > 1) continue;
+      var t = (el.textContent || '').trim();
+      if (t.indexOf('请以学校实际安排为准') < 0) continue;
+      if (t.length > 120) continue;
+      return { el: el, text: t };
+    }
+    return null;
+  }
+  function fixHint(){
+    try{
+      var ov = safeGet('sqzy-today') || 'auto';
+      var hit = pick();
+      if (!hit) return;
+      if (ov === 'auto'){
+        if (hit.el.getAttribute('data-sqzy-manual') === '1'){
+          hit.el.textContent = hit.el.getAttribute('data-sqzy-auto-text') || hit.text;
+          hit.el.removeAttribute('data-sqzy-manual');
+        }
+        return;
+      }
+      if (hit.el.getAttribute('data-sqzy-manual') === '1') return;   /* 已经改过，别反复叠加 */
+      hit.el.setAttribute('data-sqzy-manual', '1');
+      hit.el.setAttribute('data-sqzy-auto-text', hit.text);
+      var m = hit.text.match(/·\s*([^，,]+)/);
+      var desc = m ? m[1].trim() : '';
+      var wd = WD[new Date().getDay()];
+      hit.el.textContent = '今日是' + wd + '，你选择了' + (NAMES[ov] || ov) + '时间'
+                         + (desc ? ' · ' + desc : '') + '，请以学校实际安排为准。';
+    }catch(e){}
+  }
+  window.SQZY_FIX_HINT = fixHint;
+  function boot(){ fixHint(); setInterval(fixHint, 1000); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else setTimeout(boot, 0);
+})();
+
+/* ===== 「今天按」控件外观修正（用户反馈：换行显示 + 选项白字看不清 + 不够好看）=====
+   1) 单独占一行、和上面三个按钮右对齐；2) select 用页头同款深色胶囊；
+   3) 关键：option 显式给深色字 + 白底（之前继承了按钮的白字，下拉列表在系统白底上就看不见了）。 */
+(function(){
+  function style(){
+    try{
+      var sel = document.getElementById('setTodayTop');
+      if (!sel) return;
+      var wrap = sel.parentNode;
+      if (wrap && wrap.style){
+        wrap.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:8px;'
+          + 'flex:1 0 100%;width:100%;margin:10px 0 0;padding:0 2px';
+      }
+      var lab = wrap ? wrap.querySelector('span') : null;
+      if (lab) lab.style.cssText = 'font-size:12.5px;color:#c7d2fe;white-space:nowrap;letter-spacing:.5px';
+      sel.style.cssText = 'background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.30);'
+        + 'border-radius:10px;padding:5px 12px;font-size:12.5px;line-height:1.4;cursor:pointer;outline:none;'
+        + 'min-width:158px;appearance:none;-webkit-appearance:none;'
+        + 'background-image:linear-gradient(45deg,transparent 50%,#c7d2fe 50%),linear-gradient(135deg,#c7d2fe 50%,transparent 50%);'
+        + 'background-position:calc(100% - 15px) 51%,calc(100% - 10px) 51%;background-size:5px 5px,5px 5px;'
+        + 'background-repeat:no-repeat;padding-right:30px';
+      if (!document.getElementById('sqzyTodayStyle')){
+        var st = document.createElement('style');
+        st.id = 'sqzyTodayStyle';
+        st.textContent = '#setTodayTop option{color:#0f172a;background:#fff;font-size:13px}'
+          + '#setTodayTop:hover{background-color:rgba(255,255,255,.22)}'
+          + '#setTodayTop:focus{border-color:#93c5fd;box-shadow:0 0 0 3px rgba(147,197,253,.28)}';
+        document.head.appendChild(st);
+      }
+    }catch(e){}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ style(); void 0; });
+  else { style(); setInterval(style, 1200); }
+})();
+
+/* ===== 收尾修正（用户反馈）=====
+   ① 提示条不再"先闪原文再变"：改用 MutationObserver，页面文字一变就立刻改写（毫秒级），
+      不再靠 1 秒轮询；手动标记仍在，避免反复叠加。
+   ② 页头按钮区统一右对齐 + 自动换行 + 等间距：解决"空间不足时没右对齐"和
+      "某个按钮不显示时中间留大空" —— 原来没有 justify-content，按钮之间靠自然流。 */
+(function(){
+  function alignHeader(){
+    try{
+      var box = document.querySelector('.devbox');
+      if (box && box.style){
+        box.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;'
+          + 'gap:8px;row-gap:8px;margin-left:auto;width:100%';
+      }
+      var sel = document.getElementById('setTodayTop');
+      if (sel && sel.parentNode && sel.parentNode.style){
+        sel.parentNode.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:8px;'
+          + 'flex:1 0 100%;width:100%;margin:8px 0 0;padding:0 2px';
+      }
+    }catch(e){}
+  }
+  var obs = null;
+  function watchHint(){
+    try{
+      if (!window.MutationObserver || obs) return;
+      obs = new MutationObserver(function(){
+        if (typeof window.SQZY_FIX_HINT === 'function') window.SQZY_FIX_HINT();
+      });
+      obs.observe(document.body, { childList: true, subtree: true, characterData: true });
+    }catch(e){}
+  }
+  function tick(){
+    alignHeader();
+    if (typeof window.SQZY_FIX_HINT === 'function') window.SQZY_FIX_HINT();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ tick(); watchHint(); void 0; });
+  else { tick(); watchHint(); setInterval(alignHeader, 1500); }
+})();
+
+/* ===== 页头布局修正 v2（用户反馈：三个按钮要在一组右对齐；控件不能一直跳）=====
+   跳的原因：前面两个补丁用 setInterval 反复重写行内样式，每次重排都会让控件位置抖一下。
+   这次全改成：① 一次注入样式表（CSS 稳定，不再逐帧写行内样式）；② 去掉那两个定时器；
+   ③ 布局只在"元素被重建"时修一次（MutationObserver + 防抖），而且先判断是否需要改。 */
+(function(){
+  function injectCss(){
+    if (document.getElementById('sqzyHeaderCss')) return;
+    var st = document.createElement('style');
+    st.id = 'sqzyHeaderCss';
+    st.textContent = [
+      '.devbox{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px;margin-left:auto}',
+      '.devbox>*{margin:0 !important}',
+      '#todayTopWrap{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex:1 0 100%;margin:8px 0 0;padding:0}',
+      '#todayTopWrap>span{font-size:12.5px;color:#c7d2fe;white-space:nowrap;letter-spacing:.5px}',
+      '#setTodayTop{background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.30);',
+      'border-radius:10px;padding:5px 30px 5px 12px;font-size:12.5px;line-height:1.4;cursor:pointer;outline:none;',
+      'min-width:158px;appearance:none;-webkit-appearance:none;background-repeat:no-repeat;',
+      'background-image:linear-gradient(45deg,transparent 50%,#c7d2fe 50%),linear-gradient(135deg,#c7d2fe 50%,transparent 50%);',
+      'background-position:calc(100% - 15px) 51%,calc(100% - 10px) 51%;background-size:5px 5px,5px 5px}',
+      '#setTodayTop:hover{background-color:rgba(255,255,255,.22)}',
+      '#setTodayTop:focus{border-color:#93c5fd;box-shadow:0 0 0 3px rgba(147,197,253,.28)}',
+      '#setTodayTop option{color:#0f172a;background:#fff;font-size:13px}'
+    ].join('');
+    document.head.appendChild(st);
+  }
+  /* 让"整行"（含 切换为横版 那个按钮）右对齐：.devbox 的父元素才是真正的行容器 */
+  function fixRow(){
+    try{
+      injectCss();
+      var box = document.querySelector('.devbox');
+      if (!box) return;
+      var row = box.parentElement;
+      if (row && row.style && !row.getAttribute('data-sqzy-row')){
+        var cs = getComputedStyle(row);
+        if (cs.display === 'block' || cs.display === 'inline' || cs.display === 'flow-root'){
+          row.style.display = 'flex';
+          row.style.flexWrap = 'wrap';
+          row.style.alignItems = 'center';
+          row.style.justifyContent = 'flex-end';
+          row.style.gap = '8px';
+        }
+        row.setAttribute('data-sqzy-row', '1');
+      }
+      var sel = document.getElementById('setTodayTop');
+      if (sel && sel.parentElement) sel.parentElement.id = sel.parentElement.id || 'todayTopWrap';
+    }catch(e){}
+  }
+  var t = null;
+  function later(){ clearTimeout(t); t = setTimeout(fixRow, 250); }
+  function boot(){
+    fixRow();
+    try{ new MutationObserver(later).observe(document.body, { childList: true, subtree: true }); }catch(e){}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})();
+
+
+/* ===== 校历优先问本地壳（技术债收口之一）=====
+   桌面版有本地接口时，直接 /file?name=calendar.txt（壳去 Gitee 取），
+   只有网页版才回落到 readRemoteText（GitHub 镜像）。两条路都失败就按"没有校历"跑。 */
+(function(){
+  function boot(){
+    try{
+      var base = (typeof apiBase === 'function') ? apiBase() : '';
+      var note = null;
+      function finish(text){
+        if (typeof applyCalendar === 'function') applyCalendar(text);
+        note = document.getElementById('calNote');
+        if (note && typeof CAL_META === 'object' && CAL_META){
+          note.textContent = CAL_META.ok
+            ? ('特殊日表已加载：' + CAL_META.count + ' 天' + (CAL_META.bad ? '（跳过 ' + CAL_META.bad + ' 行没看懂的）' : '') + ' —— 维护入口是仓库里的 calendar.txt，改它不用发新版。')
+            : '特殊日表没读到（网络或还没建这个文件）—— 已按「周末规则 + 手动覆盖」正常工作。';
+        }
+      }
+      if (base){
+        fetch(base + '/file?' + apiQs() + '&name=calendar.txt').then(function(r){ return r.json(); })
+          .then(function(o){
+            if (o && o.ok && o.text) finish(o.text);
+            else if (typeof readRemoteText === 'function') readRemoteText('calendar.txt', finish);
+          }).catch(function(){ if (typeof readRemoteText === 'function') readRemoteText('calendar.txt', finish); });
+      }
+    }catch(e){}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else setTimeout(boot, 0);
+})();
 </script>
 </body>
 </html>

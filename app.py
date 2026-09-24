@@ -42,7 +42,7 @@ HTML_NAME = _page_file()
 APP_TITLE = '宿迁职业技术学院作息时间表'
 # 桌面壳自己的版本号：必须和页面里的 APP_VERSION、安卓 versionName 一致。
 # 页面拿它跟仓库里的 program.txt 比，用来发现「网页是最新的、但程序本体老了」。
-SHELL_VERSION = 'v2.2.2'
+SHELL_VERSION = 'v2.3.0'
 WEBVIEW2_GUID = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
 
 UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/'
@@ -197,8 +197,18 @@ def wait_window_ready(window, timeout=20.0):
     return False
 
 
+def _page_ver(html):
+    """页面里的 APP_VERSION 换算成可比较的数字（用于判断"新不新"）。"""
+    m = re.search(r"var APP_VERSION = 'v([0-9]+)\.([0-9]+)\.([0-9]+)'", html or '')
+    return (int(m.group(1)) * 10000 + int(m.group(2)) * 100 + int(m.group(3))) if m else -1
+
+
 def silent_update(window):
     html, ver = check_update()
+    # 只在新版号更大时才替换：否则会把本地/新版页面降级成线上的旧页面（v2.3.0 测试时踩到）
+    if _page_ver(html) <= _page_ver(load_current_html()):
+        api_log('线上页面 %s 不比本地新，跳过替换' % ver)
+        return
     if not html:
         return
     if not wait_window_ready(window):
@@ -457,6 +467,21 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
         if u.path == '/version':
             # 页面用它判断「程序本体要不要更新」（网页自己能热更新，exe 不能）
             return self._reply({'ok': True, 'kind': 'exe', 'shell': SHELL_VERSION})
+        if u.path == '/file':
+            # 只读代理：把仓库里的文本文件（目前只放行 calendar.txt）转给页面，白名单写死。
+            # 为什么要它：网页版读 GitHub 镜像，校园网/内网常常不通；桌面版走本地壳 → Gitee，稳得多。
+            name = q.get('name', [''])[0]
+            if name not in ('calendar.txt',):
+                return self._reply({'ok': False, 'err': 'not allowed'})
+            txt = None
+            for b in base_candidates():
+                try:
+                    txt = http_text(b + name + '?t=%d' % int(time.time()))
+                    break
+                except Exception as exc:
+                    api_log('代理取 %s 失败 %r' % (name, exc), 'warn')
+            api_log('代理取文件 %s -> %s' % (name, 'ok' if txt else 'fail'))
+            return self._reply({'ok': bool(txt), 'name': name, 'text': txt or ''})
         if u.path == '/download':
             url = q.get('url', [''])[0]
             sha = q.get('sha256', [''])[0]
