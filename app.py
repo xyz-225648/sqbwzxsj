@@ -42,7 +42,7 @@ HTML_NAME = _page_file()
 APP_TITLE = '宿迁职业技术学院作息时间表'
 # 桌面壳自己的版本号：必须和页面里的 APP_VERSION、安卓 versionName 一致。
 # 页面拿它跟仓库里的 program.txt 比，用来发现「网页是最新的、但程序本体老了」。
-SHELL_VERSION = 'v2.3.7'
+SHELL_VERSION = 'v2.3.8'
 WEBVIEW2_GUID = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
 
 UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/'
