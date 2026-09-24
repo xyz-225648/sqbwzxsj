@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.sqzytc.timetable"
+    android:versionCode="20303"
+    android:versionName="2.3.3">
+    <!-- versionCode / versionName 必须跟页面里的 APP_VERSION 对上：
+         versionCode = 主*10000 + 次*100 + 补丁（2.1.0 → 20100） -->
+    <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34" />
+    <!-- 仅用于检查更新；断网时照常使用内置页面 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 后台常驻（前台服务）与开机自启（issue IKHWKA #4） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- 一键下载后拉起系统安装器（issue IKHWKA #3） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <application
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+        android:hardwareAccelerated="true"
+        android:allowBackup="true">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout"
+            android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 前台服务：后台不被杀，提醒才跑得下去 -->
+        <service
+            android:name=".KeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="课表上下课提醒，需要常驻后台" />
+        </service>
+
+        <!-- 开机自启 -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 分享安装包用：只暴露 cacheDir/share 下的文件，exported=false，靠一次性授权读取 -->
+        <provider
+            android:name=".ApkProvider"
+            android:authorities="com.sqzytc.timetable.files"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+    </application>
+</manifest>
