@@ -11,6 +11,7 @@ import io
 import json
 import os
 import re
+import urllib.parse
 import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -43,7 +44,7 @@ def build(html_path, ver, stamp):
     # master 会随仓库变，所以页面拿到字节后**必须**核对 apkSha256 —— 校验不过就换下一条线路。
     # ?t=<sha 前 8 位> 是给 CDN 的缓存打散键：新版本换新 URL，免得撞上 12 小时的旧缓存。
     for kind, name in BASES.items():
-        info[kind + 'Url'] = base + name.replace(' ', '%20')
+        info[kind + 'Url'] = base + urllib.parse.quote(name)   # 资产名必须百分号编码，中文名不编码会让壳的请求在 ASCII 编码处炸掉
         local = os.path.join(os.path.dirname(os.path.abspath(html_path)), name)
         if os.path.exists(local):
             info[kind + 'Sha256'] = sha256_of(local)

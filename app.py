@@ -42,7 +42,7 @@ HTML_NAME = _page_file()
 APP_TITLE = '宿迁职业技术学院作息时间表'
 # 桌面壳自己的版本号：必须和页面里的 APP_VERSION、安卓 versionName 一致。
 # 页面拿它跟仓库里的 program.txt 比，用来发现「网页是最新的、但程序本体老了」。
-SHELL_VERSION = 'v2.3.0'
+SHELL_VERSION = 'v2.3.1'
 WEBVIEW2_GUID = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
 
 UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/'
@@ -588,7 +588,19 @@ def write_settings(text):
 _UPDATE = {'path': None, 'version': ''}
 
 
+def ascii_safe_url(url):
+    """把 URL 里的非 ASCII 字符（比如中文资产名）转义掉再发请求。
+    urllib 构造请求行时只接受 ASCII，裸中文会抛 UnicodeEncodeError —— 这也是
+    v2.3.0 里『一键更新』下载失败的根因之一（program.txt 里的地址没转义）。"""
+    try:
+        url.encode('ascii')
+        return url
+    except Exception:
+        return urllib.parse.quote(url, safe=':/?&=%~#+[]@!$&()*,;')
+
+
 def download_file(url, dest, sha256=None):
+    url = ascii_safe_url(url)
     """下载到临时目录并校验 sha256；返回 (ok, 说明)"""
     try:
         req = urllib.request.Request(url, headers={'User-Agent': UA})
