@@ -1,6 +1,8 @@
 package com.sqzytc.timetable;
 
 import android.app.Activity;
+import android.content.IntentFilter;
+import android.content.BroadcastReceiver;
 import android.app.DownloadManager;
 import android.app.Notification;
 import android.app.PendingIntent;
@@ -34,6 +36,10 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 
 public class MainActivity extends Activity {
+    /* 一键更新：记住最近一次下载的 id，完成时自动拉起安装界面 */
+    private long lastDownloadId = -1L;
+    private String lastApkName = null;
+    private BroadcastReceiver dlDone = null;
 
     // ==================== 自动更新配置 ====================
     // 码云仓库的 raw 地址（结尾带 /），留空表示关闭自动更新。
@@ -177,13 +183,15 @@ public class MainActivity extends Activity {
                 }
                 String name = "sqzy-timetable-" + version() + ".apk";
                 DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
+                lastApkName = name;
                 req.setTitle("宿迁职业技术学院作息时间表 " + tag)
                    .setDescription("下载完成后点这条通知即可安装")
                    .setMimeType("application/vnd.android.package-archive")
                    .setNotificationVisibility(
                            DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name);
-                dm.enqueue(req);
+                lastDownloadId = dm.enqueue(req);
+                registerDownloadReceiver();
                 return "ok";
             } catch (Exception t) {
                 return "fail";
@@ -248,6 +256,55 @@ public class MainActivity extends Activity {
 
         /** 页面用它比对 program.txt，判断这个安装包本体是不是旧了 */
         @JavascriptInterface
+
+        /** 下载完成后自动打开安装界面：把包从「下载」目录复制到缓存，再用 content:// 拉起系统安装器。
+         *  为什么绕这一层：Android 7 起不允许用 file:// 安装（FileUriExposedException），必须走 ContentProvider。 */
+        private void registerDownloadReceiver() {
+            try {
+                if (dlDone == null) {
+                    dlDone = new BroadcastReceiver() {
+                        public void onReceive(Context c, Intent i) {
+                            try {
+                                if (!DownloadManager.ACTION_DOWNLOAD_COMPLETE.equals(i.getAction())) return;
+                                long id = i.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L);
+                                if (id != lastDownloadId) return;
+                                DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+                                DownloadManager.Query q = new DownloadManager.Query().setFilterById(id);
+                                android.database.Cursor cur = dm.query(q);
+                                if (cur == null || !cur.moveToFirst()) return;
+                                int st = cur.getInt(cur.getColumnIndex(DownloadManager.COLUMN_STATUS));
+                                cur.close();
+                                if (st != DownloadManager.STATUS_SUCCESSFUL) return;
+                                openInstaller();
+                            } catch (Exception ignored) { }
+                        }
+                    };
+                }
+                IntentFilter f = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
+                if (Build.VERSION.SDK_INT >= 33) registerReceiver(dlDone, f, Context.RECEIVER_NOT_EXPORTED);
+                else registerReceiver(dlDone, f);
+            } catch (Exception ignored) { }
+        }
+
+        private void openInstaller() {
+            try {
+                File dir = new File(getCacheDir(), "share");
+                if (!dir.exists() && !dir.mkdirs()) return;
+                File src = new File(Environment.getExternalStoragePublicDirectory(
+                        Environment.DIRECTORY_DOWNLOADS), lastApkName);
+                if (!src.exists()) return;
+                File out = new File(dir, lastApkName);
+                copyFile(src, out);
+                Intent it = new Intent(Intent.ACTION_VIEW);
+                it.setDataAndType(Uri.parse("content://com.sqzytc.timetable.files/" + lastApkName),
+                        "application/vnd.android.package-archive");
+                it.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(it);
+            } catch (Exception t) {
+                try { openAppSettings(); } catch (Exception ignored) { }
+            }
+        }
+
         public String version() {
             try {
                 return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
