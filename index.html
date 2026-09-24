@@ -627,17 +627,16 @@ function countdown(i, m, secNow){
   var st = stateAt(i, m);
   if (st.cat === 'off' || st.cat === 'closed') return null;
   if (st.cat === 'free'){
-    /* 用户规则：周六下午休息显示 还有 X 分钟关寝、周日休息显示 还有 X 分钟上课，且只在距目标 2 小时以内才出现。 */
-    var _segs = SEGS[i] || [], _next = null, _cls = null;
+    /* 用户规则：休息段里，距关寝 ≤2 小时显示 还有 X 分钟关寝；否则若下一节上课在 ≤2 小时内，显示 还有 X 分钟上课。
+       关寝时间取自 TRACKS[i].close（不是段，所以以前拿 closed 段判断永远不触发）。 */
+    var _close = toMin(TRACKS[i].close), _toClose = _close - m;
+    if (_toClose > 0 && _toClose <= 120) return { kind: 'end', text: '还有 ' + leftText(_toClose) + '关寝' };
+    var _segs = SEGS[i] || [], _nx = null;
     for (var _k = 0; _k < _segs.length; _k++){
       var _g = _segs[_k];
-      if (_g.s >= st.e && !_next) _next = _g;
-      if (_g.s >= st.e && ['gap','noon','eve','free'].indexOf(_g.cat) < 0){ _cls = _g; break; }
+      if (_g.s >= st.e && ['gap','noon','eve','free'].indexOf(_g.cat) < 0){ _nx = _g; break; }
     }
-    var _toClose = st.e - m;
-    if (_next && _next.cat === 'closed' && _toClose > 0 && _toClose <= 120)
-      return { kind: 'end', text: '还有 ' + Math.round(_toClose) + ' 分钟关寝' };
-    if (_cls){ var _toCls = _cls.s - m; if (_toCls > 0 && _toCls <= 120) return { kind: 'next', text: '还有 ' + Math.round(_toCls) + ' 分钟上课' }; }
+    if (_nx){ var _d = _nx.s - m; if (_d > 0 && _d <= 120) return { kind: 'next', text: '还有 ' + leftText(_d) + '上课' }; }
     return null;
   }
   var secs;
@@ -1271,14 +1270,14 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.3.12';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.3.13';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 安卓/桌面安装包挂在哪个发行版 tag 下：跟着本版号走（每版一个 tag，每个 tag
    只放它自己那一版的安装包，不回填旧 tag——否则 tag 与二进制对不上，见 issue IKHTOU）。
    注意：这个 tag 必须在**页面发布之前**就已存在，否则窗口期内下载按钮指向不存在的 tag。
    发布顺序：合并页面 PR → 立刻建同名 tag/发行版 → 上传附件。 */
-var RELEASE_TAG = 'v2.3.12';
+var RELEASE_TAG = 'v2.3.13';
 var latestInfo = null;
 /* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
 var SHELL_SEEN_KEY = 'sqzy-seen-shell';
