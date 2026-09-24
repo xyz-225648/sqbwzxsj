@@ -1271,14 +1271,14 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.3.10';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.3.11';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 安卓/桌面安装包挂在哪个发行版 tag 下：跟着本版号走（每版一个 tag，每个 tag
    只放它自己那一版的安装包，不回填旧 tag——否则 tag 与二进制对不上，见 issue IKHTOU）。
    注意：这个 tag 必须在**页面发布之前**就已存在，否则窗口期内下载按钮指向不存在的 tag。
    发布顺序：合并页面 PR → 立刻建同名 tag/发行版 → 上传附件。 */
-var RELEASE_TAG = 'v2.3.10';
+var RELEASE_TAG = 'v2.3.11';
 var latestInfo = null;
 /* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
 var SHELL_SEEN_KEY = 'sqzy-seen-shell';
@@ -2773,6 +2773,43 @@ function setToday(v, showToast){
     }catch(e){}
   }
   function boot(){ strip(); try{ new MutationObserver(function(){ clearTimeout(boot._t); boot._t = setTimeout(strip, 150); }).observe(document.body, { childList: true, subtree: true, characterData: true }); }catch(e){} }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})();
+
+/* ===== 休息行合并 v2（卡片 + 竖版时间轴）=====
+   上一版按"同一父元素"判定，失败原因：卡片每行各自包了一层，父元素都不同。
+   这次改成**几何判定**：把所有"以休息/午休/晚休/课间休息开头"的行按文档顺序取出来，
+   同一列（左边缘对齐）且垂直紧挨着的视为同一段，只保留第一条，其余隐藏；
+   同时去掉休息行的「· 进行中」与高亮样式（渲染层不改，这里只做显示收尾）。 */
+(function(){
+  function isRest(t){ return /^(休息|午休|晚休|课间休息)/.test(t) && t.length <= 60; }
+  function pass(){
+    try{
+      var all = document.querySelectorAll('li,div,p,span,section,article');
+      var cand = [];
+      for (var i = 0; i < all.length; i++){
+        var el = all[i];
+        if (el.children.length > 2) continue;
+        if (el.offsetParent === null && el.style.display === 'none') continue;
+        var t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!isRest(t)) continue;
+        var r = el.getBoundingClientRect();
+        if (r.width < 20 || r.height < 6) continue;
+        if (t.indexOf('进行中') >= 0 && el.style){ el.textContent = t.replace(/\s*·?\s*进行中\s*$/, ''); }
+        if (el.style){ el.style.background = ''; el.style.backgroundColor = ''; el.style.color = ''; el.style.borderColor = ''; }
+        cand.push({ el: el, r: r });
+      }
+      cand.sort(function(a, b){ return a.r.top - b.r.top; });
+      var last = null;
+      cand.forEach(function(c){
+        var same = last && (c.r.top - last.r.bottom) < 40 && Math.abs(c.r.left - last.r.left) < 10;
+        if (same){ c.el.style.display = 'none'; }
+        else { c.el.style.display = ''; }
+        last = c.r;
+      });
+    }catch(e){}
+  }
+  function boot(){ pass(); try{ new MutationObserver(function(){ clearTimeout(boot._t); boot._t = setTimeout(pass, 150); }).observe(document.body, { childList: true, subtree: true, characterData: true }); }catch(e){} }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
 </script>
