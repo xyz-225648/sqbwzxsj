@@ -566,6 +566,20 @@ function buildSegments(t){
     var nx = raw[i+1];
     if (nx && nx.s > raw[i].e) out.push({ s:raw[i].e, e:nx.s, label:'课间休息', cat:'gap', row:null });
   }
+  /* 相邻的非上课段合并成一段：周六的「午休 + 下午休息」应显示成一条，周日的「白天休息 + 午休 + 晚休」同理。
+     只影响显示与状态判定（这些段本来就不发通知、不算上课），上课段的边界不变。 */
+  var REST_CAT = { free: 1, noon: 1, eve: 1, gap: 1 };
+  var mg = [];
+  out.forEach(function(g){
+    var p = mg[mg.length - 1];
+    if (p && REST_CAT[p.cat] && REST_CAT[g.cat] && p.e === g.s){
+      p.e = g.e;
+      if (p.cat === 'free' || g.cat === 'free'){ p.cat = 'free'; p.label = '休息'; }
+      else if (p.cat === 'noon' || g.cat === 'noon'){ p.cat = 'noon'; p.label = '午休'; }
+      if (p.row == null && g.row != null) p.row = g.row;
+    } else mg.push(g);
+  });
+  out = mg;
   return out;
 }
 var SEGS = WEEKDAY_TRACKS.map(buildSegments);
@@ -1242,14 +1256,14 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.3.7';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.3.8';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 安卓/桌面安装包挂在哪个发行版 tag 下：跟着本版号走（每版一个 tag，每个 tag
    只放它自己那一版的安装包，不回填旧 tag——否则 tag 与二进制对不上，见 issue IKHTOU）。
    注意：这个 tag 必须在**页面发布之前**就已存在，否则窗口期内下载按钮指向不存在的 tag。
    发布顺序：合并页面 PR → 立刻建同名 tag/发行版 → 上传附件。 */
-var RELEASE_TAG = 'v2.3.7';
+var RELEASE_TAG = 'v2.3.8';
 var latestInfo = null;
 /* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
 var SHELL_SEEN_KEY = 'sqzy-seen-shell';
@@ -2460,7 +2474,7 @@ function setToday(v, showToast){
     var t = (el.textContent || '').replace(/\s+/g, '');
     if (!t || t.length > 40) return false;
     if (/第[一二三四五六七八九十]节/.test(t)) return false;
-    return t.indexOf('休息') === 0;
+    return /^(休息|午休|晚休|课间休息)/.test(t);
   }
   function mergeRests(){
     try{
