@@ -42,7 +42,7 @@ HTML_NAME = _page_file()
 APP_TITLE = '宿迁职业技术学院作息时间表'
 # 桌面壳自己的版本号：必须和页面里的 APP_VERSION、安卓 versionName 一致。
 # 页面拿它跟仓库里的 program.txt 比，用来发现「网页是最新的、但程序本体老了」。
-SHELL_VERSION = 'v2.3.1'
+SHELL_VERSION = 'v2.3.2'
 WEBVIEW2_GUID = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
 
 UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/'
@@ -640,35 +640,34 @@ def apply_update():
     # 注意：newline='' —— 行尾自己写成 CRLF，别让 Python 再翻译一次（会变成 CR CR LF，
     # cmd 解析不了整段脚本，替换就静默失效了，这个坑踩过一次）
     try:
+        vbs_path = os.path.join(tempfile.gettempdir(), 'sqzy_update.vbs')
+        with open(vbs_path, 'w', encoding='gbk', newline='\r\n') as f:
+            # 用 vbs 以「完全隐藏」方式跑 cmd，避免弹黑窗口（用户反馈过）
+            f.write('CreateObject("WScript.Shell").Run "cmd /c ""' + cmd_path + '"" ""' + _UPDATE['path'] + '"" ""' + exe + '""", 0, False' + chr(13) + chr(10))
         with open(cmd_path, 'w', encoding='gbk', newline='') as f:
             f.write('@echo off\r\n')
-            f.write('rem 等旧进程退出（最多 60 秒），ping 当计时器：timeout 在无控制台时会直接报错\r\n')
-            f.write('for /l %%i in (1,1,60) do (\r\n')
-            f.write('  tasklist /fi "PID eq %d" 2>nul | find "%d" >nul\r\n' % (pid, pid))
-            f.write('  if errorlevel 1 goto :swap\r\n')
-            f.write('  ping -n 2 127.0.0.1 >nul\r\n')
-            f.write(')\r\n')
-            f.write(':swap\r\n')
+            f.write('rem 先等助手退出，再结束主程序 —— 主程序不退出，exe 文件被占用，move 一定失败（踩过）\r\n')
+            f.write('ping -n 3 127.0.0.1 >nul\r\n')
+            f.write('taskkill /IM "%~nx1" /F >nul 2>nul\r\n')
             f.write('set /a n=0\r\n')
             f.write(':retry\r\n')
-            f.write('move /y "%s" "%s" >nul 2>nul\r\n' % (new, exe))
-            f.write('if not exist "%s" goto :run\r\n' % new)
-            # 文件还被占着（杀软/索引在扫）就等一会儿再试，别把用户程序弄成半新半旧
+            f.write('move /y "%~1" "%~2" >nul 2>nul\r\n')
+            f.write('if not exist "%~1" goto :run\r\n')
             f.write('set /a n+=1\r\n')
-            f.write('if %n% geq 20 goto :fail\r\n')
+            f.write('if %n% geq 40 goto :fail\r\n')
             f.write('ping -n 2 127.0.0.1 >nul\r\n')
             f.write('goto :retry\r\n')
             f.write(':run\r\n')
-            f.write('start "" "%s"\r\n' % exe)
+            f.write('start "" "%~2"\r\n')
             f.write('del "%~f0"\r\n')
+            f.write('del "%~f0".vbs >nul 2>nul\r\n')
             f.write('exit /b\r\n')
             f.write(':fail\r\n')
-            # 别用 % 格式化写这一行：%date% 会被当成 %d 格式符（踩过一次）
-            f.write('echo ' + '%date% %time%' + ' 替换失败，新版本仍在 ' + new
-                    + ' > "%TEMP%\\sqzy_update.log"\r\n')
+            f.write('echo %date% %time% 替换失败，新版本仍在 %~1 > "%TEMP%\sqzy_update.log"\r\n')
+            f.write('start "" "%~2"\r\n')
             f.write('del "%~f0"\r\n')
-        subprocess.Popen(['cmd', '/c', 'start', '', cmd_path],
-                         creationflags=0x08000000, close_fds=True)
+        # 参数：新文件、目标 exe（%~nx1 用于 taskkill，先停主程序再替换）
+        subprocess.Popen(['wscript.exe', vbs_path], creationflags=0x08000000, close_fds=True)
         api_log('已安排替换并重启：%s' % _UPDATE['version'])
         return True, '程序将退出并在替换后自动重启'
     except Exception as exc:

@@ -1,1 +1,1 @@
-window.SQZY_LATEST={"v": "v2.3.1", "h": "c83925dc1d4b32c4", "t": "2026-09-24 11:28"};
+window.SQZY_LATEST={"v": "v2.3.2", "h": "029cc5bd65336af5", "t": "2026-09-24 12:11"};
