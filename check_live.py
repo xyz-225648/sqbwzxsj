@@ -70,5 +70,22 @@ for label, ext in (('安卓安装包', 'apk'), ('Windows 程序', 'exe')):
     local = open(name, 'rb').read()
     say(data == local, '%s 下载可用且与本地一致（%s，md5 %s）'
         % (label, tag, hashlib.md5(local).hexdigest()[:10]))
+
+# 闸门：APK 内部的 versionName 必须等于页面 APP_VERSION
+# （v2.3.2 发布时 APK 编译失败、附件仍是旧构建，但哈希一致，所以只有比版本号才拦得住）
+import glob as _glob, subprocess as _sub
+_aapt = _glob.glob(os.path.join(".apkbuild", "tools", "sdk", "build-tools", "*", "aapt2.exe"))
+_apk = "宿迁职业技术学院作息时间表.apk"
+if _aapt and os.path.exists(_apk):
+    try:
+        _out = _sub.run([_aapt[0], "dump", "badging", _apk], capture_output=True, text=True,
+                        encoding="utf-8", errors="replace").stdout
+        _m = __import__("re").search(r"versionName=.(\d+\.\d+\.\d+)", _out or "")
+        _vn = _m.group(1) if _m else "?"
+        say(_vn == app_v.lstrip("v"), "APK 内部版本 %s == 页面 APP_VERSION %s" % (_vn, app_v))
+    except Exception as _e:
+        say(False, "APK 版本核验失败：%r" % (_e,))
+else:
+    print("  · 跳过 APK 版本核验（本机没有 aapt2 或没有 apk 文件）")
 print('  check_live: %s' % ('PASS' if not bad else 'FAIL'))
 sys.exit(1 if bad else 0)
