@@ -1271,14 +1271,14 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.3.11';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.3.12';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 安卓/桌面安装包挂在哪个发行版 tag 下：跟着本版号走（每版一个 tag，每个 tag
    只放它自己那一版的安装包，不回填旧 tag——否则 tag 与二进制对不上，见 issue IKHTOU）。
    注意：这个 tag 必须在**页面发布之前**就已存在，否则窗口期内下载按钮指向不存在的 tag。
    发布顺序：合并页面 PR → 立刻建同名 tag/发行版 → 上传附件。 */
-var RELEASE_TAG = 'v2.3.11';
+var RELEASE_TAG = 'v2.3.12';
 var latestInfo = null;
 /* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
 var SHELL_SEEN_KEY = 'sqzy-seen-shell';
@@ -2776,13 +2776,28 @@ function setToday(v, showToast){
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
 
-/* ===== 休息行合并 v2（卡片 + 竖版时间轴）=====
-   上一版按"同一父元素"判定，失败原因：卡片每行各自包了一层，父元素都不同。
-   这次改成**几何判定**：把所有"以休息/午休/晚休/课间休息开头"的行按文档顺序取出来，
-   同一列（左边缘对齐）且垂直紧挨着的视为同一段，只保留第一条，其余隐藏；
-   同时去掉休息行的「· 进行中」与高亮样式（渲染层不改，这里只做显示收尾）。 */
+
+/* ===== 休息段合并 v3（时间也合并）=====
+   在 v2 的几何合并基础上，把**保留下来的那一条**改成整段的时间与标签，例如周六
+   原来的「午休 11:30–14:00」+ 一串「休息」→ 现在只显示一条「休息 11:30–19:00」。
+   只改文本节点（圆点、结构不动），所以不会破坏卡片的图标与配色。 */
 (function(){
   function isRest(t){ return /^(休息|午休|晚休|课间休息)/.test(t) && t.length <= 60; }
+  function timeOf(t){ var m = /(\d{1,2}:\d{2})\s*[-–—~]\s*(\d{1,2}:\d{2})/.exec(t); return m ? { a: m[1], b: m[2], raw: m[0] } : null; }
+  function editTexts(el, fn){
+    var nodes = [];
+    (function walk(n){
+      for (var i = 0; i < n.childNodes.length; i++){
+        var c = n.childNodes[i];
+        if (c.nodeType === 3) nodes.push(c);
+        else if (c.nodeType === 1) walk(c);
+      }
+    })(el);
+    for (var k = 0; k < nodes.length; k++){
+      var nv = fn(nodes[k].nodeValue || '');
+      if (nv !== nodes[k].nodeValue) nodes[k].nodeValue = nv;
+    }
+  }
   function pass(){
     try{
       var all = document.querySelectorAll('li,div,p,span,section,article');
@@ -2790,23 +2805,47 @@ function setToday(v, showToast){
       for (var i = 0; i < all.length; i++){
         var el = all[i];
         if (el.children.length > 2) continue;
-        if (el.offsetParent === null && el.style.display === 'none') continue;
+        if (el.style.display === 'none') continue;
         var t = (el.textContent || '').replace(/\s+/g, ' ').trim();
         if (!isRest(t)) continue;
         var r = el.getBoundingClientRect();
         if (r.width < 20 || r.height < 6) continue;
-        if (t.indexOf('进行中') >= 0 && el.style){ el.textContent = t.replace(/\s*·?\s*进行中\s*$/, ''); }
+        if (t.indexOf('进行中') >= 0) editTexts(el, function(s){ return s.replace(/\s*·?\s*进行中\s*$/, ''); });
         if (el.style){ el.style.background = ''; el.style.backgroundColor = ''; el.style.color = ''; el.style.borderColor = ''; }
-        cand.push({ el: el, r: r });
+        cand.push({ el: el, t: t, r: r, time: timeOf(t) });
       }
       cand.sort(function(a, b){ return a.r.top - b.r.top; });
-      var last = null;
-      cand.forEach(function(c){
-        var same = last && (c.r.top - last.r.bottom) < 40 && Math.abs(c.r.left - last.r.left) < 10;
-        if (same){ c.el.style.display = 'none'; }
-        else { c.el.style.display = ''; }
+      var head = null, last = null, endT = null, tail = null;
+      function flush(){
+        if (head && endT && head.time && endT !== head.time.b){
+          var span = head.time.a + '–' + endT;
+          var raw = head.time.raw, a = head.time.a;
+          editTexts(head.el, function(s){
+            var o = s;
+            if (o.indexOf(raw) >= 0) o = o.replace(raw, span);
+            else if (o.indexOf(a) >= 0 && !/^\s*\d/.test(o)) o = o;
+            o = o.replace(/^(午休|晚休|课间休息)/, '休息');
+            return o;
+          });
+          head.t = '';
+        }
+      }
+      for (var j = 0; j < cand.length; j++){
+        var c = cand[j];
+        var same = last && (c.r.top - last.bottom) < 40 && Math.abs(c.r.left - last.left) < 10;
+        if (same){
+          if (c.time) endT = c.time.b;
+          c.el.style.display = 'none';
+          tail = c.r;
+        } else {
+          flush();
+          head = c; endT = c.time ? c.time.b : null; c.el.style.display = '';
+          tail = c.r;
+          if (c.el.style.display === 'none') c.el.style.display = '';
+        }
         last = c.r;
-      });
+      }
+      flush();
     }catch(e){}
   }
   function boot(){ pass(); try{ new MutationObserver(function(){ clearTimeout(boot._t); boot._t = setTimeout(pass, 150); }).observe(document.body, { childList: true, subtree: true, characterData: true }); }catch(e){} }
