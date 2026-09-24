@@ -467,6 +467,21 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
         if u.path == '/version':
             # 页面用它判断「程序本体要不要更新」（网页自己能热更新，exe 不能）
             return self._reply({'ok': True, 'kind': 'exe', 'shell': SHELL_VERSION})
+        if u.path == '/file':
+            # 只读代理：把仓库里的文本文件（目前只放行 calendar.txt）转给页面，白名单写死。
+            # 为什么要它：网页版读 GitHub 镜像，校园网/内网常常不通；桌面版走本地壳 → Gitee，稳得多。
+            name = q.get('name', [''])[0]
+            if name not in ('calendar.txt',):
+                return self._reply({'ok': False, 'err': 'not allowed'})
+            txt = None
+            for b in base_candidates():
+                try:
+                    txt = http_text(b + name + '?t=%d' % int(time.time()))
+                    break
+                except Exception as exc:
+                    api_log('代理取 %s 失败 %r' % (name, exc), 'warn')
+            api_log('代理取文件 %s -> %s' % (name, 'ok' if txt else 'fail'))
+            return self._reply({'ok': bool(txt), 'name': name, 'text': txt or ''})
         if u.path == '/download':
             url = q.get('url', [''])[0]
             sha = q.get('sha256', [''])[0]
