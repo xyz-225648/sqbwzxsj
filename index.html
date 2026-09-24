@@ -566,6 +566,21 @@ function buildSegments(t){
     var nx = raw[i+1];
     if (nx && nx.s > raw[i].e) out.push({ s:raw[i].e, e:nx.s, label:'课间休息', cat:'gap', row:null });
   }
+  /* 只合并相邻且至少一侧是休息段的块（用户指定：周六 午休+下午休息 / 周日 早上休息+晚休）。
+     周内模板没有休息段，所以对周内晚自习完全不生效。 */
+  var REST_CAT = { free: 1, noon: 1, eve: 1 };
+  var mg = [];
+  out.forEach(function(g){
+    var p = mg[mg.length - 1];
+    var ok = p && REST_CAT[p.cat] && REST_CAT[g.cat]
+             && (p.cat === 'free' || g.cat === 'free')
+             && p.e === g.s;
+    if (ok){
+      p.e = g.e; p.cat = 'free'; p.label = '休息';
+      if (p.row == null && g.row != null) p.row = g.row;
+    } else mg.push(g);
+  });
+  out = mg;
   return out;
 }
 var SEGS = WEEKDAY_TRACKS.map(buildSegments);
@@ -610,7 +625,21 @@ function leftText(mins){
 }
 function countdown(i, m, secNow){
   var st = stateAt(i, m);
-  if (st.cat === 'off' || st.cat === 'closed' || st.cat === 'free') return null;
+  if (st.cat === 'off' || st.cat === 'closed') return null;
+  if (st.cat === 'free'){
+    /* 用户规则：周六下午休息显示 还有 X 分钟关寝、周日休息显示 还有 X 分钟上课，且只在距目标 2 小时以内才出现。 */
+    var _segs = SEGS[i] || [], _next = null, _cls = null;
+    for (var _k = 0; _k < _segs.length; _k++){
+      var _g = _segs[_k];
+      if (_g.s >= st.e && !_next) _next = _g;
+      if (_g.s >= st.e && ['gap','noon','eve','free'].indexOf(_g.cat) < 0){ _cls = _g; break; }
+    }
+    var _toClose = st.e - m;
+    if (_next && _next.cat === 'closed' && _toClose > 0 && _toClose <= 120)
+      return { kind: 'end', text: '还有 ' + Math.round(_toClose) + ' 分钟关寝' };
+    if (_cls){ var _toCls = _cls.s - m; if (_toCls > 0 && _toCls <= 120) return { kind: 'next', text: '还有 ' + Math.round(_toCls) + ' 分钟上课' }; }
+    return null;
+  }
   var secs;
   if (st.cat === 'prep'){
     secs = toMin(TRACKS[i].close) * 60 - secNow;
@@ -1242,14 +1271,14 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.3.9';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.3.10';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 安卓/桌面安装包挂在哪个发行版 tag 下：跟着本版号走（每版一个 tag，每个 tag
    只放它自己那一版的安装包，不回填旧 tag——否则 tag 与二进制对不上，见 issue IKHTOU）。
    注意：这个 tag 必须在**页面发布之前**就已存在，否则窗口期内下载按钮指向不存在的 tag。
    发布顺序：合并页面 PR → 立刻建同名 tag/发行版 → 上传附件。 */
-var RELEASE_TAG = 'v2.3.9';
+var RELEASE_TAG = 'v2.3.10';
 var latestInfo = null;
 /* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
 var SHELL_SEEN_KEY = 'sqzy-seen-shell';
@@ -2718,6 +2747,32 @@ function setToday(v, showToast){
     }catch(e){}
   }
   function boot(){ fix(); try{ new MutationObserver(function(){ clearTimeout(boot._t); boot._t = setTimeout(fix, 120); }).observe(document.body, { childList: true, subtree: true, characterData: true }); }catch(e){} }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})();
+
+/* ===== 休息段不显示"红框/进行中"（用户要求）=====
+   做法：渲染后用 DOM 兜底 —— 行文字以 休息/午休/晚休 开头的，去掉「· 进行中」后缀并清掉高亮样式。
+   只为显示服务，不碰渲染逻辑本身。 */
+(function(){
+  function strip(){
+    try{
+      var all = document.querySelectorAll('li,div,p,span,section,article');
+      for (var i = 0; i < all.length; i++){
+        var el = all[i];
+        if (el.children.length > 1) continue;
+        var t = (el.textContent || '').trim();
+        if (!/^(休息|午休|晚休|课间休息)/.test(t)) continue;
+        if (t.indexOf('进行中') >= 0){
+          el.textContent = t.replace(/\s*·?\s*进行中\s*$/, '');
+        }
+        if (el.style && el.style.background) el.style.background = '';
+        if (el.style && el.style.backgroundColor) el.style.backgroundColor = '';
+        if (el.style && el.style.color) el.style.color = '';
+        if (el.style && el.style.borderColor) el.style.borderColor = '';
+      }
+    }catch(e){}
+  }
+  function boot(){ strip(); try{ new MutationObserver(function(){ clearTimeout(boot._t); boot._t = setTimeout(strip, 150); }).observe(document.body, { childList: true, subtree: true, characterData: true }); }catch(e){} }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
 </script>
