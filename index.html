@@ -2640,6 +2640,35 @@ function setToday(v, showToast){
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
 
+
+/* ===== 校历优先问本地壳（技术债收口之一）=====
+   桌面版有本地接口时，直接 /file?name=calendar.txt（壳去 Gitee 取），
+   只有网页版才回落到 readRemoteText（GitHub 镜像）。两条路都失败就按"没有校历"跑。 */
+(function(){
+  function boot(){
+    try{
+      var base = (typeof apiBase === 'function') ? apiBase() : '';
+      var note = null;
+      function finish(text){
+        if (typeof applyCalendar === 'function') applyCalendar(text);
+        note = document.getElementById('calNote');
+        if (note && typeof CAL_META === 'object' && CAL_META){
+          note.textContent = CAL_META.ok
+            ? ('特殊日表已加载：' + CAL_META.count + ' 天' + (CAL_META.bad ? '（跳过 ' + CAL_META.bad + ' 行没看懂的）' : '') + ' —— 维护入口是仓库里的 calendar.txt，改它不用发新版。')
+            : '特殊日表没读到（网络或还没建这个文件）—— 已按「周末规则 + 手动覆盖」正常工作。';
+        }
+      }
+      if (base){
+        fetch(base + '/file?' + apiQs() + '&name=calendar.txt').then(function(r){ return r.json(); })
+          .then(function(o){
+            if (o && o.ok && o.text) finish(o.text);
+            else if (typeof readRemoteText === 'function') readRemoteText('calendar.txt', finish);
+          }).catch(function(){ if (typeof readRemoteText === 'function') readRemoteText('calendar.txt', finish); });
+      }
+    }catch(e){}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else setTimeout(boot, 0);
+})();
 </script>
 </body>
 </html>
