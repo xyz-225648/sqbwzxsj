@@ -509,22 +509,27 @@ function calKey(d){
   return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
 }
 function parseCalendar(text){
-  var table = {}, bad = 0;
+  var table = {}, notes = {}, bad = 0;
   String(text || '').split(/\r?\n/).forEach(function(raw){
     var line = raw.replace(/#.*$/, '').trim();
     if (!line) return;
     var parts = line.split(/[\s,，]+/), key = parts[0], tpl = (parts[1] || '').toLowerCase();
     if (!/^\d{4}-\d{2}-\d{2}(~\d{4}-\d{2}-\d{2})?$/.test(key) || !SCHEDULES[tpl]){ bad++; return; }
-    if (key.indexOf('~') < 0){ table[key] = tpl; return; }
+    var _note = parts.slice(2).join(' ').trim();
+    if (key.indexOf('~') < 0){ table[key] = tpl; if (_note) notes[key] = _note; return; }
     var a = key.split('~'), d1 = new Date(a[0] + 'T00:00:00'), d2 = new Date(a[1] + 'T00:00:00');
     if (isNaN(d1) || isNaN(d2) || d2 < d1){ bad++; return; }
-    for (var d = new Date(d1), g = 0; d <= d2 && g < 400; d.setDate(d.getDate() + 1), g++) table[calKey(d)] = tpl;
+    for (var d = new Date(d1), g = 0; d <= d2 && g < 400; d.setDate(d.getDate() + 1), g++) {
+      table[calKey(d)] = tpl;
+      if (_note) notes[calKey(d)] = _note;
+    }
   });
-  return { table: table, bad: bad };
+  return { table: table, notes: notes, bad: bad };
 }
 function applyCalendar(text){
   var r = parseCalendar(text || '');
   SPECIAL = r.table;
+  SPECIAL_NOTE = r.notes || {};
   CAL_META = { ok: !!text, count: Object.keys(r.table).length, bad: r.bad };
   try {
     _curDay = '';
@@ -1237,14 +1242,14 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.3.6';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.3.7';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 安卓/桌面安装包挂在哪个发行版 tag 下：跟着本版号走（每版一个 tag，每个 tag
    只放它自己那一版的安装包，不回填旧 tag——否则 tag 与二进制对不上，见 issue IKHTOU）。
    注意：这个 tag 必须在**页面发布之前**就已存在，否则窗口期内下载按钮指向不存在的 tag。
    发布顺序：合并页面 PR → 立刻建同名 tag/发行版 → 上传附件。 */
-var RELEASE_TAG = 'v2.3.6';
+var RELEASE_TAG = 'v2.3.7';
 var latestInfo = null;
 /* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
 var SHELL_SEEN_KEY = 'sqzy-seen-shell';
@@ -2677,6 +2682,43 @@ function setToday(v, showToast){
     }catch(e){}
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else setTimeout(boot, 0);
+})();
+
+/* ===== 提示条显示校历原因（改良版）=====
+   需求：像 9/24 这天，提示条要写"今日是周四 · 中秋调休：上午照常上课，下午放假（19:00 关寝）"，
+   而不是只报模板名"周六 · 半天课"（模板名是内部实现，用户看不出为什么今天要上半天的课）。
+   优先级：手动覆盖（页头/设置里选的） > 校历说明 > 作者原本的模板文案。 */
+(function(){
+  var WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  function todayKey(){
+    var d = new Date(), M = d.getMonth() + 1, D = d.getDate();
+    return d.getFullYear() + '-' + (M < 10 ? '0' + M : M) + '-' + (D < 10 ? '0' + D : D);
+  }
+  function find(){
+    var all = document.querySelectorAll('div,p,span,section');
+    for (var i = 0; i < all.length; i++){
+      var el = all[i];
+      if (el.children.length > 1) continue;
+      var t = (el.textContent || '').trim();
+      if (t.indexOf('请以学校实际安排为准') < 0 || t.length > 120) continue;
+      return { el: el, text: t };
+    }
+    return null;
+  }
+  function fix(){
+    try{
+      var ov = safeGet('sqzy-today') || 'auto';
+      if (ov !== 'auto') return;                                  /* 手动覆盖交给另一段逻辑 */
+      var note = (typeof SPECIAL_NOTE === 'object' && SPECIAL_NOTE) ? SPECIAL_NOTE[todayKey()] : '';
+      if (!note) return;                                            /* 今天不是特殊日，保持原样 */
+      var hit = find();
+      if (!hit) return;
+      var want = '今日是' + WD[new Date().getDay()] + ' · ' + note + '，请以学校实际安排为准。';
+      if (hit.el.textContent !== want) hit.el.textContent = want;
+    }catch(e){}
+  }
+  function boot(){ fix(); try{ new MutationObserver(function(){ clearTimeout(boot._t); boot._t = setTimeout(fix, 120); }).observe(document.body, { childList: true, subtree: true, characterData: true }); }catch(e){} }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
 </script>
 </body>
