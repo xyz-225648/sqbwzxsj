@@ -71,11 +71,11 @@ if (/Android/i.test(navigator.userAgent || '')) document.documentElement.setAttr
   .setbtn:hover{background:rgba(255,255,255,.2)}
   .sheet{position:fixed;inset:0;z-index:9998;display:none;background:rgba(15,23,42,.55);
          overscroll-behavior:contain}
-  .sheet.on{display:block}
-  .sheet-card{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-              width:min(430px,calc(100vw - 28px));max-height:calc(100vh - 40px);overflow:auto;
+  .sheet.on{display:flex;align-items:center;justify-content:center;padding:20px 14px}
+  .sheet-card{position:relative;left:auto;top:auto;transform:none;
+              width:min(430px,100%);max-height:100%;overflow:auto;
               overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
-              background:#fff;border-radius:15px;box-shadow:0 20px 60px rgba(15,23,42,.35);padding:16px 18px 18px}
+              background:#fff;border-radius:15px;box-shadow:0 20px 60px rgba(15,23,42,.35);padding:12px 14px 14px}
   /* 弹层打开时把底下那一页按住：否则在设置里滑动，时间表会跟着一起滚 */
   html.sheet-lock{overflow:hidden}
   html.sheet-lock body{position:fixed;left:0;right:0;width:100%}
@@ -90,8 +90,8 @@ if (/Android/i.test(navigator.userAgent || '')) document.documentElement.setAttr
   .sheet-head b{font-size:16px;color:#0f172a}
   .sheet-x{cursor:pointer;color:#94a3b8;font-size:15px;padding:2px 7px;border-radius:7px}
   .sheet-x:hover{background:#f1f5f9;color:#0f172a}
-  .setsec{font-size:12px;font-weight:700;color:#64748b;margin:14px 0 7px;padding-top:11px;border-top:1px solid #eef2f7}
-  .setrow{display:flex;align-items:center;gap:9px;font-size:13px;color:#0f172a;padding:6px 0}
+  .setsec{font-size:12px;font-weight:700;color:#64748b;margin:9px 0 5px;padding-top:7px;border-top:1px solid #eef2f7}
+  .setrow{display:flex;align-items:center;gap:9px;font-size:13px;color:#0f172a;padding:4px 0}
   .setrow label{display:flex;align-items:center;gap:8px;cursor:pointer;flex:1}
   .setrow input[type=checkbox]{width:16px;height:16px;accent-color:#2563eb;cursor:pointer}
   .setrow input[type=number]{width:58px;font:inherit;font-size:13px;padding:4px 7px;border:1px solid #cbd5e1;border-radius:7px}
@@ -100,9 +100,9 @@ if (/Android/i.test(navigator.userAgent || '')) document.documentElement.setAttr
                  border:1px solid #e2e8f0;border-radius:9px;cursor:pointer}
   .setgrid label.on{border-color:#bfdbfe;background:#eff6ff}
   .settest{font:inherit;font-size:13px;font-weight:600;color:#fff;background:#2563eb;border:0;
-           border-radius:9px;padding:9px 14px;cursor:pointer;width:100%;margin-top:8px}
+           border-radius:9px;padding:8px 14px;cursor:pointer;width:100%;margin-top:6px}
   .settest:hover{background:#1d4ed8}
-  .setnote{font-size:12px;color:#94a3b8;line-height:1.7;margin-top:9px}
+  .setnote{font-size:11.5px;color:#94a3b8;line-height:1.5;margin-top:7px}
   .setnote.hi{color:#b45309;font-weight:600}
   .sysToast{position:fixed;right:16px;bottom:16px;z-index:9999;max-width:330px;background:#0f172a;color:#fff;
             border-radius:12px;padding:12px 15px;box-shadow:0 14px 40px rgba(15,23,42,.4)}
@@ -356,6 +356,18 @@ if (/Android/i.test(navigator.userAgent || '')) document.documentElement.setAttr
   html[data-device="mobile"] .vtl .dur{font-size:11.5px}
   html[data-device="mobile"] footer{font-size:11.5px}
 
+  /* 桌面端设置项多，用固定两栏网格：左栏/右栏互不影响，
+     点「检查更新」后右栏多出内容也不会把左栏按钮挤跑 */
+  @media (min-width:701px){
+    #setSheet .sheet-card{width:700px;max-width:calc(100% - 28px);box-sizing:border-box;
+                          min-width:0;
+                          scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent}
+    #setSheet .sheet-card::-webkit-scrollbar{width:8px;height:8px;display:block}
+    #setSheet .sheet-card::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
+    #setSheet .sheet-card::-webkit-scrollbar-track{background:transparent}
+    #setSheet .set-cols{display:grid;grid-template-columns:1fr 1fr;gap:0 18px;align-items:start}
+  }
+
   @media (max-width:1080px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
   @media (max-width:700px){.cards{grid-template-columns:1fr}.nowlist{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
@@ -566,9 +578,9 @@ function buildSegments(t){
     var nx = raw[i+1];
     if (nx && nx.s > raw[i].e) out.push({ s:raw[i].e, e:nx.s, label:'课间休息', cat:'gap', row:null });
   }
-  /* 只合并相邻且至少一侧是休息段的块（用户指定：周六 午休+下午休息 / 周日 早上休息+晚休）。
-     周内模板没有休息段，所以对周内晚自习完全不生效。 */
-  var REST_CAT = { free: 1, noon: 1, eve: 1 };
+  /* 只合并相邻且至少一侧是休息段的块（用户指定：周六 午休+下午休息）。
+     周日早休息与晚休不再合并：晚休要单独显示、单独判定。 */
+  var REST_CAT = { free: 1, noon: 1 };
   var mg = [];
   out.forEach(function(g){
     var p = mg[mg.length - 1];
@@ -756,11 +768,29 @@ function renderGantt(){
       h += '<i class="grid major" style="left:' + pct(hr*60) + '%"></i>';
       if (hr < 22) h += '<i class="grid" style="left:' + pct(hr*60+30) + '%"></i>';
     }
-    ROWS.forEach(function(r, j){
+    /* 休息段合并：连续的休息行（以及紧跟休息段的午休/课间/晚休）只画一条 */
+    for (var j = 0; j < ROWS.length; j++){
       var rest = !!(t.rest && t.rest.indexOf(j) >= 0);
-      var se = t.times[j].split('-'), s = toMin(se[0]), e = toMin(se[1]);
-      h += '<div class="bar ' + (rest ? 'free' : CAT[r]) + '" style="left:' + pct(s) + '%;width:' + (pct(e)-pct(s)) + '%"><span>' + (rest ? '休' : SHORT[r]) + '</span></div>';
-    });
+      var mergeBreak = !rest && (ROWS[j] === '午休' || ROWS[j] === '课间休息' || ROWS[j] === '晚休')
+                       && (t.rest && t.rest.indexOf(j + 1) >= 0);
+      if (rest || mergeBreak){
+        var s0 = toMin(t.times[j].split('-')[0]), e0 = toMin(t.times[j].split('-')[1]);
+        var e = j;
+        while (e + 1 < ROWS.length){
+          var r2 = !!(t.rest && t.rest.indexOf(e + 1) >= 0);
+          var b2 = !r2 && (ROWS[e + 1] === '午休' || ROWS[e + 1] === '课间休息' || ROWS[e + 1] === '晚休')
+                   && (t.rest && t.rest.indexOf(e + 2) >= 0);
+          if (!(r2 || b2)) break;
+          e++;
+          e0 = toMin(t.times[e].split('-')[1]);
+        }
+        h += '<div class="bar free" data-row="' + j + '" style="left:' + pct(s0) + '%;width:' + (pct(e0)-pct(s0)) + '%"><span>休</span></div>';
+        j = e;
+      } else {
+        var se = t.times[j].split('-'), s = toMin(se[0]), e1 = toMin(se[1]);
+        h += '<div class="bar ' + CAT[ROWS[j]] + '" data-row="' + j + '" style="left:' + pct(s) + '%;width:' + (pct(e1)-pct(s)) + '%"><span>' + SHORT[ROWS[j]] + '</span></div>';
+      }
+    }
     var cp = pct(toMin(t.close));
     h += '<i class="close-line" style="left:' + cp + '%"></i><i class="close-dot" style="left:' + cp + '%"></i>';
     h += '</div><div class="g-close"><span class="close-val">关寝 ' + t.close + '</span></div></div>';
@@ -794,19 +824,40 @@ var cardItems = [], cardMeta = [], cardCd = [];
 function renderCards(){
   var el = document.getElementById('cards');
   el.innerHTML = TRACKS.map(function(t){
-    var items = ROWS.map(function(r, j){
+    var items = [];
+    for (var j = 0; j < ROWS.length; j++){
       var rest = !!(t.rest && t.rest.indexOf(j) >= 0);
-      var se = t.times[j].split('-').map(toMin);
-      var span = dur(se[1] - se[0]);
-      return '<li' + (rest ? ' class="rest"' : '') + '><i class="dot d-' + (rest ? 'free' : CAT[r]) + '"></i>'
-           + '<span class="time">' + (rest ? '休息' : t.times[j] + '<i class="dur">（' + span + '）</i>') + '</span>'
-           + '<span class="lbl">' + (rest ? '休息' : r) + '</span></li>';
-    }).join('');
-    var closeLi = '<li class="hl"><i class="dot d-close"></i><span class="time">' + t.close + '</span><span class="lbl">关寝</span></li>';
+      /* 午休/课间休息/晚休后面紧跟休息段时，视为同一段休息（周六午休+休息就是同一回事） */
+      var mergeBreak = !rest && (ROWS[j] === '午休' || ROWS[j] === '课间休息' || ROWS[j] === '晚休')
+                       && (t.rest && t.rest.indexOf(j + 1) >= 0);
+      if (rest || mergeBreak){
+        var startMin = toMin(t.times[j].split('-')[0]);
+        var endMin = toMin(t.times[j].split('-')[1]);
+        var e = j;
+        while (e + 1 < ROWS.length){
+          var r2 = !!(t.rest && t.rest.indexOf(e + 1) >= 0);
+          var b2 = !r2 && (ROWS[e + 1] === '午休' || ROWS[e + 1] === '课间休息' || ROWS[e + 1] === '晚休')
+                   && (t.rest && t.rest.indexOf(e + 2) >= 0);
+          if (!(r2 || b2)) break;
+          e++;
+          endMin = toMin(t.times[e].split('-')[1]);
+        }
+        items.push('<li class="rest" data-row="' + j + '"><i class="dot d-free"></i><span class="time">'
+          + fmt(startMin) + '–' + fmt(endMin) + '</span><span class="lbl">休息</span></li>');
+        j = e;
+      } else {
+        var se = t.times[j].split('-').map(toMin);
+        var span = dur(se[1] - se[0]);
+        items.push('<li data-row="' + j + '"><i class="dot d-' + CAT[ROWS[j]] + '"></i>'
+          + '<span class="time">' + t.times[j] + '<i class="dur">（' + span + '）</i></span>'
+          + '<span class="lbl">' + ROWS[j] + '</span></li>');
+      }
+    }
+    var closeLi = '<li class="hl" data-row="close"><i class="dot d-close"></i><span class="time">' + t.close + '</span><span class="lbl">关寝</span></li>';
     return '<div class="card" style="--flash:' + t.flash + '"><div class="card-h" style="background:' + t.head + ';color:' + t.ink + '">' +
            '<div class="t">' + t.name + '</div>' +
            '<div class="m"></div><div class="cd"></div></div>' +
-           '<ul class="vtl">' + items + closeLi + '</ul></div>';
+           '<ul class="vtl">' + items.join('') + closeLi + '</ul></div>';
   }).join('');
   var cards = [].slice.call(el.querySelectorAll('.card'));
   cardItems = cards.map(function(c){ return [].slice.call(c.querySelectorAll('.vtl li')); });
@@ -855,10 +906,15 @@ function renderNow(){
       cardCd[i].textContent = cd ? cd.text : '';
       cardCd[i].style.display = cd ? '' : 'none';
     }
-    laneBars[i].forEach(function(b, j){ b.classList.toggle('now', st.li === j); });
-    cardItems[i].forEach(function(li, j){
-      var key = (j === ROWS.length) ? 'close' : j;
-      var on = (st.li === key);
+    laneBars[i].forEach(function(b){
+      if (b.classList.contains('free')){ b.classList.remove('now'); return; }   /* 休息段不高亮 */
+      var row = parseInt(b.getAttribute('data-row'), 10);
+      b.classList.toggle('now', st.li === row);
+    });
+    cardItems[i].forEach(function(li){
+      var key = li.getAttribute('data-row');
+      var on = (key === 'close') ? (st.li === 'close')
+                                 : (st.li === parseInt(key, 10));
       li.classList.toggle('live', on);
       li.querySelector('.lbl').setAttribute('data-suffix',
         on ? (st.cat === 'closed' ? ' · 已关寝' : (st.cat === 'noon' || st.cat === 'eve' ? ' · 当前' : ' · 进行中')) : '');
@@ -976,8 +1032,10 @@ function vtPaintGuide(mm){
   var p = pct(mm), up = p > 80;      /* 太靠下就把气泡翻到线的上方 */
   TRACKS.forEach(function(t, i){
     var st = stateAt(i, mm);
-    vtBlocks[i].forEach(function(b, j){
-      b.classList.toggle('hot', st.li === j);
+    vtBlocks[i].forEach(function(b){
+      if (b.classList.contains('free')){ b.classList.remove('hot'); b.classList.remove('now'); return; }
+      var row = parseInt(b.getAttribute('data-row'), 10);
+      b.classList.toggle('hot', st.li === row);
       b.classList.remove('now');   /* 钉住期间先收起“现在”圈线，避免两种描边叠在一起 */
     });
     var chip = vtChips[i];
@@ -1018,7 +1076,10 @@ function updateVtNow(m){
   if (vtBlocks.length){
     TRACKS.forEach(function(t, i){
       var li = stateAt(i, m).li;
-      vtBlocks[i].forEach(function(b, j){ b.classList.toggle('now', !vtPinned && li === j); });
+      vtBlocks[i].forEach(function(b){
+        var row = parseInt(b.getAttribute('data-row'), 10);
+        b.classList.toggle('now', !vtPinned && li === row);
+      });
     });
   }
 }
@@ -1050,14 +1111,34 @@ function renderVertical(){
   }
 
   vtPlot.innerHTML = TRACKS.map(function(t, i){
-    var blocks = ROWS.map(function(r, j){
+    var blocks = [];
+    for (var j = 0; j < ROWS.length; j++){
       var rest = !!(t.rest && t.rest.indexOf(j) >= 0);
-      var se = t.times[j].split('-').map(toMin);
-      return '<div class="vt-blk ' + (rest ? 'free' : CAT[r]) + '" style="top:' + pct(se[0]) + '%;height:' +
-             ((se[1] - se[0]) / SPAN * 100) + '%">' + (rest ? '休' : SHORT[r]) + '</div>';
-    }).join('');
+      var mergeBreak = !rest && (ROWS[j] === '午休' || ROWS[j] === '课间休息' || ROWS[j] === '晚休')
+                       && (t.rest && t.rest.indexOf(j + 1) >= 0);
+      if (rest || mergeBreak){
+        var startMin = toMin(t.times[j].split('-')[0]);
+        var endMin = toMin(t.times[j].split('-')[1]);
+        var e = j;
+        while (e + 1 < ROWS.length){
+          var r2 = !!(t.rest && t.rest.indexOf(e + 1) >= 0);
+          var b2 = !r2 && (ROWS[e + 1] === '午休' || ROWS[e + 1] === '课间休息' || ROWS[e + 1] === '晚休')
+                   && (t.rest && t.rest.indexOf(e + 2) >= 0);
+          if (!(r2 || b2)) break;
+          e++;
+          endMin = toMin(t.times[e].split('-')[1]);
+        }
+        blocks.push('<div class="vt-blk free" data-row="' + j + '" style="top:' + pct(startMin) + '%;height:'
+          + ((endMin - startMin) / SPAN * 100) + '%">休</div>');
+        j = e;
+      } else {
+        var se = t.times[j].split('-').map(toMin);
+        blocks.push('<div class="vt-blk ' + CAT[ROWS[j]] + '" data-row="' + j + '" style="top:' + pct(se[0]) + '%;height:'
+          + ((se[1] - se[0]) / SPAN * 100) + '%">' + SHORT[ROWS[j]] + '</div>');
+      }
+    }
     var cp = pct(toMin(t.close));
-    return '<div class="vt-col" data-track="' + i + '">' + blocks +
+    return '<div class="vt-col" data-track="' + i + '">' + blocks.join('') +
            '<i class="vt-close" style="top:' + cp + '%"></i>' +
            '<span class="vt-close-tag" style="top:' + cp + '%">关寝 ' + t.close + '</span>' +
            '<span class="vt-chip"></span></div>';
@@ -1286,17 +1367,17 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.3.15';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.4.0';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
-/* 安卓/桌面安装包挂在哪个发行版 tag 下：跟着本版号走（每版一个 tag，每个 tag
-   只放它自己那一版的安装包，不回填旧 tag——否则 tag 与二进制对不上，见 issue IKHTOU）。
-   注意：这个 tag 必须在**页面发布之前**就已存在，否则窗口期内下载按钮指向不存在的 tag。
-   发布顺序：合并页面 PR → 立刻建同名 tag/发行版 → 上传附件。 */
-var RELEASE_TAG = 'v2.3.15';
+/* 页面热更新（version.txt）的发行版 tag：主要用来取 index.html 附件，跟页面版本号走。
+   程序本体（exe/apk）的下载 tag 在 program.txt 里单独记（= 程序本体版本），两者分开算；
+   只有 program.txt 拿不到时才拿 RELEASE_TAG 兜底。 */
+var RELEASE_TAG = 'v2.4.0';
 var latestInfo = null;
 /* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
 var SHELL_SEEN_KEY = 'sqzy-seen-shell';
+var shellAutoDl = false;   /* 本次会话内，新版本的安装包只自动下载一次 */
 var shellVer = null;        /* 当前壳自报的版本；拿不到就是 null（网页版 / 老版 exe） */
 var programInfo = null;     /* 仓库里 program.txt 的内容 */
 var notifyCfg = { on:true, before:true, next:true, start:false, end:false, min:5,
@@ -1451,6 +1532,16 @@ function renderAbout(){
    锁法用 position:fixed + top:-Y 而不是简单 overflow:hidden：
    后者会让页面瞬间跳回顶部，看着更糟。 */
 var sheetLockY = 0, sheetLockN = 0;
+/* 安卓原生侧要知道「当前有没有弹层打开」：设置面板打开时按返回键应只关面板，
+   而不是把整个 App 退回桌面。原生桥调用 setSheetOpen 同步这个状态。 */
+function syncSheetState(){
+  var has = document.querySelectorAll('.sheet.on').length > 0;
+  try{
+    if (window.SQZY_ANDROID && window.SQZY_ANDROID.setSheetOpen){
+      window.SQZY_ANDROID.setSheetOpen(has);
+    }
+  }catch(e){}
+}
 function sheetLock(on){
   var html = document.documentElement, body = document.body;
   if (on){
@@ -1473,11 +1564,52 @@ function sheetOpen(el){
   if (!el) return;
   el.classList.add('on');
   sheetLock(true);
+  syncSheetState();
+  fitSheetCard(el);
+  setTimeout(function(){ fitSheetCard(el); }, 60);
+}
+function fitSheetCard(el){
+  /* WebView2 里 100vh/vw 与 flex 居中在 DPI/横向溢出下不可靠（实测面板会偏右、上下溢出）。
+     桌面端：JS 按视口像素水平居中，并测量实际高度后垂直居中；
+     手机/安卓端：保持长条形，交给 CSS flex 水平垂直居中。 */
+  try{
+    var card = el.querySelector('.sheet-card');
+    if (!card) return;
+    var vw = window.innerWidth, vh = window.innerHeight;
+    if (vw >= 701){
+      var w = Math.max(320, Math.min(700, vw - 28));
+      var maxH = Math.max(200, vh - 40);
+      card.style.position = 'absolute';
+      card.style.left = Math.max(14, Math.round((vw - w) / 2)) + 'px';
+      card.style.top = '20px';
+      card.style.transform = 'none';
+      card.style.width = w + 'px';
+      card.style.maxHeight = maxH + 'px';
+      card.style.maxWidth = 'none';
+      card.style.margin = '0';
+      function centerY(){
+        var ch = card.getBoundingClientRect().height || card.offsetHeight;
+        if (ch > 0) card.style.top = Math.max(10, Math.round((vh - ch) / 2)) + 'px';
+      }
+      setTimeout(centerY, 0);
+      setTimeout(centerY, 80);
+    } else {
+      card.style.position = '';
+      card.style.left = '';
+      card.style.top = '';
+      card.style.transform = '';
+      card.style.width = '';
+      card.style.maxHeight = '';
+      card.style.maxWidth = '';
+      card.style.margin = '';
+    }
+  }catch(e){}
 }
 function sheetClose(el){
   if (!el) return;
   if (el.classList.contains('on')) sheetLock(false);
   el.classList.remove('on');
+  syncSheetState();
 }
 function closeDialog(id){
   var d = document.getElementById(id);
@@ -1485,6 +1617,7 @@ function closeDialog(id){
     if (d.classList.contains('on')) sheetLock(false);
     d.parentNode.removeChild(d);
   }
+  syncSheetState();
 }
 function showUpdateDialog(info){
   closeDialog('upDlg');
@@ -1691,13 +1824,16 @@ function fetchApkByMirror(info, i, cb){
   }).catch(function(){ fetchApkByMirror(info, i + 1, cb); });
 }
 function downloadApkSmart(info){
-  /* 有原生桥 → 交给系统下载器（显式文件名，存下来就是 .apk）；没有 → 走镜像自己保存；
+  /* 有原生桥 → 交给系统下载器（按目标版本命名，存下来就是 .apk）；没有 → 走镜像自己保存；
      两条都不行 → 打开 gitee 附件并说明改名办法 */
   var gitee = shellAssetUrl(info, 'apk');
-  if (isAndroid() && window.SQZY_ANDROID && window.SQZY_ANDROID.downloadApk){
+  if (isAndroid() && window.SQZY_ANDROID && (window.SQZY_ANDROID.downloadApkAs || window.SQZY_ANDROID.downloadApk)){
     try{
-      var r = window.SQZY_ANDROID.downloadApk(gitee);
-      if (r === 'ok'){ inPageToast('已开始后台下载', '下完会自动弹出安装界面（不用点通知）'); return; }
+      var want = (info && info.apk) ? normVer(info.apk) : (info && info.v ? normVer(info.v) : '');
+      var r = window.SQZY_ANDROID.downloadApkAs
+        ? window.SQZY_ANDROID.downloadApkAs(gitee, want)
+        : window.SQZY_ANDROID.downloadApk(gitee);
+      if (r === 'ok'){ inPageToast('已开始后台下载', '下完会自动弹出安装界面，你只要点「安装」'); return true; }
     }catch(e){}
   }
   inPageToast('正在从镜像下载…', '拿不到就自动换下一条线路');
@@ -1708,6 +1844,7 @@ function downloadApkSmart(info){
       openExternal(gitee);
     }
   });
+  return false;
 }
 function shellAssetUrl(info, kind){
   /* program.txt 里带直链就用它，没带就按发行包命名规则拼 */
@@ -1779,12 +1916,24 @@ function applyProgramInfo(info){
   }
   renderShellNote('程序本体：' + shellVer + ' → 有新版 ' + want + '（网页已自动更新，' +
                   shellName() + '要手动换）', true, shellDownloadUrl(info));
+  var autoStarted = false;
   if (safeGet(SHELL_SEEN_KEY) !== want){
     safeSet(SHELL_SEEN_KEY, want);
-    showShellDialog(shellVer, want, shellDownloadUrl(info), info);
+    /* 安卓：每个新版本只自动下载一次，下载完由原生桥自动拉起系统安装界面，
+       用户只需要点「安装/继续安装」。失败仍可点弹窗里的按钮重试。 */
+    if (isAndroid() && !shellAutoDl &&
+        window.SQZY_ANDROID && (window.SQZY_ANDROID.downloadApkAs || window.SQZY_ANDROID.downloadApk)){
+      shellAutoDl = true;
+      autoStarted = downloadApkSmart(info) === true;
+    }
+  }
+  /* 老版本用户：强制弹窗更新。每次发现落后都弹（同一时刻只保留一个），
+     不再「只弹一次」——用户不更新，下次打开/检查还会再弹。 */
+  if (!document.getElementById('shDlg')){
+    showShellDialog(shellVer, want, shellDownloadUrl(info), info, autoStarted, true);
   }
 }
-function showShellDialog(cur, want, url, info){
+function showShellDialog(cur, want, url, info, autoStarted, forced){
   closeDialog('shDlg');
   var canAuto = !isAndroid() && !!apiBase();   /* 只有 exe 才能自我替换 */
   var wrap = document.createElement('div');
@@ -1793,27 +1942,40 @@ function showShellDialog(cur, want, url, info){
   var card = document.createElement('div');
   card.className = 'sheet-card';
   card.style.maxWidth = '400px';
-  card.innerHTML = '<div class="sheet-head"><b>程序本体有新版</b><span class="sheet-x" id="shClose">✕</span></div>' +
-    '<div class="setnote" style="margin:0 0 6px">课表内容会自动更新，但' + shellName() +
-    '不能自动替换，得手动装一次。</div>' +
+  var note = (isAndroid() && autoStarted)
+    ? '安装包已在后台自动下载，下完会自动弹出安装界面，你只要点「安装」就完成更新。'
+    : ('课表内容会自动更新，但' + shellName() + '不能自动替换，得手动装一次。');
+  card.innerHTML = '<div class="sheet-head"><b>程序本体有新版</b>'
+    + (forced ? '' : '<span class="sheet-x" id="shClose">✕</span>') + '</div>' +
+    '<div class="setnote" style="margin:0 0 6px">' + note + '</div>' +
     '<div class="setrow" style="display:block"><b>当前：</b>' + cur + '　<b>新版：</b>' +
     '<span style="color:#1d4ed8">' + want + '</span></div>';
   var go = document.createElement('button');
   go.type = 'button'; go.className = 'settest';
   go.textContent = canAuto ? '一键更新（下载完自动换新重启）'
-                           : (isAndroid() ? '一键下载安装包（存成 .apk）' : '去下载新版');
+                           : (isAndroid() ? (autoStarted ? '重新下载安装包' : '一键下载安装包（存成 .apk）') : '去下载新版');
   var later = document.createElement('button');
   later.type = 'button'; later.className = 'settest';
   later.style.background = '#e2e8f0'; later.style.color = '#0f172a';
   later.textContent = '稍后再说';
+  if (forced) later.style.display = 'none';   /* 强制弹窗不主动给跳过，下载失败才放出来兜底 */
   card.appendChild(go); card.appendChild(later);
   wrap.appendChild(card);
   document.body.appendChild(wrap);
   go.addEventListener('click', function(){
     if (!canAuto){
-      if (isAndroid()) downloadApkSmart(info || programInfo);
-      else openExternal(url);
-      closeDialog('shDlg'); return;
+      if (isAndroid()){
+        var okDl = downloadApkSmart(info || programInfo);
+        if (okDl === true){
+          go.disabled = true; go.textContent = '已开始下载，下完会自动弹出安装界面';
+        } else {
+          later.style.display = '';
+        }
+        return;
+      }
+      openExternal(url);
+      if (!forced) closeDialog('shDlg');
+      return;
     }
     /* 交给 exe：/download 下载+校验 sha256，/apply 写替换脚本并重启 */
     go.disabled = true; go.textContent = '正在下载新版…';
@@ -1833,13 +1995,15 @@ function showShellDialog(cur, want, url, info){
     }).catch(function(err){
       go.disabled = false; go.textContent = '手动下载新版';
       later.textContent = '稍后再说';
+      later.style.display = '';
       go.onclick = function(){ openExternal(url); closeDialog('shDlg'); };
       inPageToast('一键更新没成功', String((err && err.message) || err) + '；已改成手动下载');
     });
   });
   later.addEventListener('click', function(){ closeDialog('shDlg'); });
-  document.getElementById('shClose').addEventListener('click', function(){ closeDialog('shDlg'); });
-  wrap.addEventListener('click', function(e){ if (e.target === wrap) closeDialog('shDlg'); });
+  var x = document.getElementById('shClose');
+  if (x) x.addEventListener('click', function(){ closeDialog('shDlg'); });
+  if (!forced) wrap.addEventListener('click', function(e){ if (e.target === wrap) closeDialog('shDlg'); });
 }
 function checkShellProgram(manual){
   detectShell(function(){
@@ -1986,63 +2150,68 @@ function initSettings(){
     '<div class="sheet-card">' +
       '<div class="sheet-head"><b>设置</b><span class="sheet-x" id="setClose">✕</span></div>' +
       '<div class="setnote" style="margin:0 0 4px">改动立即生效并自动保存，不用点确认；关掉窗口下次打开还在。</div>' +
-      '<div class="setsec" id="notifySecName">桌面通知</div>' +
-      '<div class="setrow"><label><input type="checkbox" id="setOn">' +
-        '<span id="setOnLabel">开启通知（Windows 系统通知）</span></label></div>' +
-      '<div class="setsec">提醒哪些学院</div>' +
-      '<div class="setgrid" id="setTracks">' + trackBoxes + '</div>' +
-      '<div class="setsec">提醒时机</div>' +
-      '<div class="setrow"><label><input type="checkbox" id="setBefore">下课前提醒</label>' +
-        '提前 <input type="number" id="setMin" min="1" max="30"> 分钟</div>' +
-      '<div class="setrow"><label><input type="checkbox" id="setNext">上课前提醒</label></div>' +
-      '<div class="setrow"><label><input type="checkbox" id="setStart">开始上课时提醒</label></div>' +
-      '<div class="setrow"><label><input type="checkbox" id="setEnd">下课时提醒</label></div>' +
-      '<div class="setsec" id="winSecName" style="display:none">窗口（仅 Windows 桌面版）</div>' +
-      '<div id="winSec" style="display:none">' +
-        '<div class="setrow"><label><input type="checkbox" id="setTop">窗口置顶（总在最前）' +
-          '<span style="font-size:11px;color:#94a3b8;margin-left:6px">Ctrl+T</span></label></div>' +
-        '<div class="setrow"><label><input type="checkbox" id="setCloseTray">点右上角 ✕ 后隐藏到托盘' +
-          '<span style="font-size:11px;color:#94a3b8;margin-left:6px">不勾＝直接退出</span></label></div>' +
-        '<div class="setrow"><label><input type="checkbox" id="setAuto">开机自启动' +
-          '<span style="font-size:11px;color:#94a3b8;margin-left:6px">登录后自动在托盘运行</span></label></div>' +
-        '<div class="setnote">隐藏到托盘后程序仍在后台跑，课表提醒照常发；双击托盘图标恢复窗口，右键托盘图标可退出。' +
-        '开机自启动只写当前用户的启动项，不用管理员权限，取消勾选即刻移除。</div>' +
-      '</div>' +
-      '<div class="setsec" id="andSecName" style="display:none">后台运行（仅安卓手机版）</div>' +
-      '<div id="andSec" style="display:none">' +
-        '<div class="setrow"><label><input type="checkbox" id="setKeep">后台常驻' +
-          '<span style="font-size:11px;color:#94a3b8;margin-left:6px">状态栏留一条通知，系统就不容易杀掉它</span></label></div>' +
-        '<div class="setnote" id="andBattNote"></div>' +
-        '<button class="settest" id="andBatt" type="button">允许后台运行（关掉电池优化）</button>' +
-        '<button class="settest" id="andSys" type="button">打开应用设置（自启动 / 权限）</button>' +
-        '<button class="settest" id="andShare" type="button">把安装包分享给同学（微信 / QQ / 蓝牙）</button>' +
-        '<div class="setnote">国产系统默认会「清理后台」，光关电池优化还不够，自启动一般要手动放行：' +
-        '小米＝设置→应用设置→应用管理→本应用→自启动；华为/荣耀＝设置→应用→应用启动管理→本应用改成「手动管理」，三项都允许；' +
-        'OPPO/一加＝设置→电池→应用耗电管理→允许后台运行并允许自启动；vivo＝设置→电池→后台高耗电→允许；' +
-        '其他＝设置→应用→本应用→省电策略→「无限制」。设完回到本页会重新检测。</div>' +
-      '</div>' +
-      '<div class="setsec">今天按哪套作息</div>' +
-      '<div class="setrow"><label>今天按：<select id="setToday" style="margin-left:6px">' +
-        '<option value="auto">自动（按日期规则）</option>' +
-        '<option value="weekday">周内作息</option>' +
-        '<option value="saturday">周六（半天课）</option>' +
-        '<option value="sunday">周日</option>' +
-        '<option value="holiday">放假（全天休息）</option>' +
-      '</select></label></div>' +
-      '<div class="setnote" id="calNote"></div>' +
-      '<button class="settest" id="setTest" type="button">发一条测试通知</button>' +
-      '<div class="setnote" id="setNote"></div>' +
-      '<div class="setsec">关于</div>' +
-      '<div class="setrow" style="align-items:flex-start;gap:10px">' +
-        '<div style="flex:1;min-width:0">' +
-          '<b style="font-size:13px">宿迁职业技术学院作息时间表</b>' +
-          '<div class="setnote" id="aboutVer" style="margin-top:3px"></div>' +
+      '<div class="set-cols">' +
+        '<div class="set-col">' +
+          '<div class="setsec" id="notifySecName">桌面通知</div>' +
+          '<div class="setrow"><label><input type="checkbox" id="setOn">' +
+            '<span id="setOnLabel">开启通知（Windows 系统通知）</span></label></div>' +
+          '<div class="setsec">提醒哪些学院</div>' +
+          '<div class="setgrid" id="setTracks">' + trackBoxes + '</div>' +
+          '<div class="setsec">提醒时机</div>' +
+          '<div class="setrow"><label><input type="checkbox" id="setBefore">下课前提醒</label>' +
+            '提前 <input type="number" id="setMin" min="1" max="30"> 分钟</div>' +
+          '<div class="setrow"><label><input type="checkbox" id="setNext">上课前提醒</label></div>' +
+          '<div class="setrow"><label><input type="checkbox" id="setStart">开始上课时提醒</label></div>' +
+          '<div class="setrow"><label><input type="checkbox" id="setEnd">下课时提醒</label></div>' +
         '</div>' +
-        '<button class="settest" id="aboutCheck" type="button" style="width:auto;margin:0;white-space:nowrap">检查更新</button>' +
+        '<div class="set-col">' +
+          '<div class="setsec" id="winSecName" style="display:none">窗口（仅 Windows 桌面版）</div>' +
+          '<div id="winSec" style="display:none">' +
+            '<div class="setrow"><label><input type="checkbox" id="setTop">窗口置顶（总在最前）' +
+              '<span style="font-size:11px;color:#94a3b8;margin-left:6px">Ctrl+T</span></label></div>' +
+            '<div class="setrow"><label><input type="checkbox" id="setCloseTray">点右上角 ✕ 后隐藏到托盘' +
+              '<span style="font-size:11px;color:#94a3b8;margin-left:6px">不勾＝直接退出</span></label></div>' +
+            '<div class="setrow"><label><input type="checkbox" id="setAuto">开机自启动' +
+              '<span style="font-size:11px;color:#94a3b8;margin-left:6px">登录后自动在托盘运行</span></label></div>' +
+            '<div class="setnote">隐藏到托盘后提醒照常发；双击托盘图标恢复窗口，右键可退出。开机自启动只写当前用户启动项。</div>' +
+          '</div>' +
+          '<div class="setsec" id="andSecName" style="display:none">后台运行（仅安卓手机版）</div>' +
+          '<div id="andSec" style="display:none">' +
+            '<div class="setrow"><label><input type="checkbox" id="setKeep">后台常驻' +
+              '<span style="font-size:11px;color:#94a3b8;margin-left:6px">状态栏留一条通知，系统就不容易杀掉它</span></label></div>' +
+            '<div class="setnote" id="andBattNote"></div>' +
+            '<button class="settest" id="andBatt" type="button">允许后台运行（关掉电池优化）</button>' +
+            '<button class="settest" id="andSys" type="button">打开应用设置（自启动 / 权限）</button>' +
+            '<button class="settest" id="andShare" type="button">把安装包分享给同学（微信 / QQ / 蓝牙）</button>' +
+            '<div class="setnote">国产系统默认会「清理后台」，光关电池优化还不够，自启动一般要手动放行：' +
+            '小米＝设置→应用设置→应用管理→本应用→自启动；华为/荣耀＝设置→应用→应用启动管理→本应用改成「手动管理」，三项都允许；' +
+            'OPPO/一加＝设置→电池→应用耗电管理→允许后台运行并允许自启动；vivo＝设置→电池→后台高耗电→允许；' +
+            '其他＝设置→应用→本应用→省电策略→「无限制」。设完回到本页会重新检测。</div>' +
+          '</div>' +
+          '<div class="setsec">今天按哪套作息</div>' +
+          '<div class="setrow"><label>今天按：<select id="setToday" style="margin-left:6px">' +
+            '<option value="auto">自动（按日期规则）</option>' +
+            '<option value="weekday">周内作息</option>' +
+            '<option value="saturday">周六（半天课）</option>' +
+            '<option value="sunday">周日</option>' +
+            '<option value="holiday">放假（全天休息）</option>' +
+          '</select></label></div>' +
+          '<div class="setnote" id="calNote"></div>' +
+          '<button class="settest" id="setTest" type="button">发一条测试通知</button>' +
+          '<div class="setnote" id="setNote"></div>' +
+          '<div class="setsec">关于</div>' +
+          '<div class="setrow" style="align-items:flex-start;gap:10px">' +
+            '<div style="flex:1;min-width:0">' +
+              '<b style="font-size:13px">宿迁职业技术学院作息时间表</b>' +
+              '<div class="setnote" id="aboutVer" style="margin-top:3px"></div>' +
+            '</div>' +
+            '<button class="settest" id="aboutCheck" type="button" style="width:auto;margin:0;white-space:nowrap">检查更新</button>' +
+          '</div>' +
+          '<div class="setnote" id="aboutNote"></div>' +
+          '<div class="setnote" id="aboutShell"></div>' +
+          '<button class="settest" id="aboutDownload" type="button" style="display:none">去下载程序本体新版</button>' +
+        '</div>' +
       '</div>' +
-      '<div class="setnote" id="aboutNote"></div>' +
-      '<div class="setnote" id="aboutShell"></div>' +
-      '<button class="settest" id="aboutDownload" type="button" style="display:none">去下载程序本体新版</button>' +
     '</div>';
   document.body.appendChild(sheet);
 
@@ -2207,6 +2376,16 @@ function initSettings(){
   window.SQZY_APK = { mirrors: apkMirrors, smart: downloadApkSmart, name: apkFileName };
   window.SQZY_SETSHELL = function(v){ shellVer = normVer(v); };
   window.SQZY_GETSHELL = function(){ return shellVer; };
+  window.SQZY_CLOSE_SHELL_DIALOG = function(){ closeDialog('shDlg'); };
+  window.SQZY_BACK_CLOSE_SHEET = function(){
+    var sheets = document.querySelectorAll('.sheet.on');
+    if (!sheets.length) return false;
+    var top = sheets[sheets.length - 1];
+    var x = top.querySelector('.sheet-x');
+    if (x){ x.click(); } else { sheetClose(top); }
+    syncSheetState();
+    return true;
+  };
   window.SQZY_SEGAT = segAtMin;
   window.SQZY_CFG = notifyCfg;
   setInterval(checkNotify, 15000);
@@ -2237,14 +2416,24 @@ function initZoom(){
     z = Math.min(2.5, Math.max(0.6, Math.round(v * 100) / 100));
     document.documentElement.style.zoom = z;
     safeSet(ZOOM_KEY, String(z));
+    /* 弹层卡片用 var(--sheet-maxh) 限高：CSS zoom 下 100vh 仍是未缩放视口，
+       必须除以 zoom 才能让卡片完整落在可视区域内 */
+    document.documentElement.style.setProperty('--sheet-maxh',
+      Math.max(160, Math.floor((window.innerHeight - 40) / z)) + 'px');
+    try{ document.querySelectorAll('.sheet.on').forEach(function(s){ fitSheetCard(s); }); }catch(e){}
     reflowNow();
   }
+  document.documentElement.style.setProperty('--sheet-maxh',
+    Math.max(160, Math.floor((window.innerHeight - 40) / z)) + 'px');
   if (Math.abs(z - 1) > 0.001) apply(z);
   document.addEventListener('wheel', function(e){
     if (!e.ctrlKey) return;
     e.preventDefault();
     apply(z + (e.deltaY < 0 ? 0.1 : -0.1));
   }, { passive:false });
+  window.addEventListener('resize', function(){
+    try{ document.querySelectorAll('.sheet.on').forEach(function(s){ fitSheetCard(s); }); }catch(e){}
+  });
   document.addEventListener('keydown', function(e){
     if (!(e.ctrlKey || e.metaKey)) return;
     var k = e.key;
@@ -2436,7 +2625,7 @@ window.SQTC = { showGuide:showGuide, hideGuide:hideGuide, pinAt:pinAt, unpin:unp
           var note = document.getElementById('calNote');
           if (note){
             note.textContent = meta.ok
-              ? ('特殊日表已加载：' + meta.count + ' 天' + (meta.bad ? '（跳过 ' + meta.bad + ' 行没看懂的）' : '') + ' —— 维护入口是仓库里的 calendar.txt，改它不用发新版。')
+              ? ('特殊日表已加载：' + meta.count + ' 天' + (meta.bad ? '（跳过 ' + meta.bad + ' 行没看懂的）' : ''))
               : '特殊日表没读到（网络或还没建这个文件）—— 已按「周末规则 + 手动覆盖」正常工作。';
           }
         });
@@ -2500,7 +2689,7 @@ function setToday(v, showToast){
    为什么不去改解析：时段索引被甘特图/倒计时/通知多处引用，动数据风险大；这里只影响显示。 */
 (function(){
   function isRestRow(el){
-    if (!el || el.children.length > 2) return false;
+    if (!el || el.children.length > 3) return false;
     var t = (el.textContent || '').replace(/\s+/g, '');
     if (!t || t.length > 40) return false;
     if (/第[一二三四五六七八九十]节/.test(t)) return false;
@@ -2712,7 +2901,7 @@ function setToday(v, showToast){
         note = document.getElementById('calNote');
         if (note && typeof CAL_META === 'object' && CAL_META){
           note.textContent = CAL_META.ok
-            ? ('特殊日表已加载：' + CAL_META.count + ' 天' + (CAL_META.bad ? '（跳过 ' + CAL_META.bad + ' 行没看懂的）' : '') + ' —— 维护入口是仓库里的 calendar.txt，改它不用发新版。')
+            ? ('特殊日表已加载：' + CAL_META.count + ' 天' + (CAL_META.bad ? '（跳过 ' + CAL_META.bad + ' 行没看懂的）' : ''))
             : '特殊日表没读到（网络或还没建这个文件）—— 已按「周末规则 + 手动覆盖」正常工作。';
         }
       }
@@ -2821,6 +3010,8 @@ function setToday(v, showToast){
         var el = all[i];
         if (el.children.length > 2) continue;
         if (el.style.display === 'none') continue;
+        /* 卡片列表、竖版时间轴、横版甘特图都已在渲染时合并休息段，这里再碰会误隐藏标签/晚修 */
+        if (el.closest && (el.closest('.card .vtl') || el.closest('#vtPlot') || el.closest('#gGrid'))) continue;
         var t = (el.textContent || '').replace(/\s+/g, ' ').trim();
         if (!isRest(t)) continue;
         var r = el.getBoundingClientRect();

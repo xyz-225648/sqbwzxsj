@@ -237,7 +237,8 @@ def check(label, dom, err, mobile=False, android=False, pin=None):
     if mobile:
         blk = len(re.findall(r'class="vt-blk', body))
         print('    竖排时间轴节块: %d 个' % blk)
-        if blk < 40:
+        # 休息段合并后：周内 52、周六/周日 20、放假 4 —— 这里只校验“每个学院至少生成 1 块”
+        if blk < 4:
             fail.append('竖排时间轴没生成（只有 %d 个节块）' % blk)
         if 'id="vtNow"' not in body:
             fail.append('竖排时间轴的「现在」线没有生成')

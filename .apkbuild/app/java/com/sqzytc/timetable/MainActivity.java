@@ -15,9 +15,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.Settings;
-import android.net.Uri;
 import android.graphics.Color;
-import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.KeyEvent;
@@ -63,6 +61,7 @@ public class MainActivity extends Activity {
 
     private WebView web;
     private volatile boolean alive = true;
+    private volatile boolean sheetOpen = false;
     private static final String CHANNEL_ID = "sqzy_timetable";
     /* 原子自增：原来的 timeMillis()%500 会撞号，两条提醒互相顶掉 */
     private static final java.util.concurrent.atomic.AtomicInteger NEXT_ID =
@@ -94,23 +93,18 @@ public class MainActivity extends Activity {
             }
             try {
                 HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-                c.setInstanceFollowRedirects(true);
-                c.setConnectTimeout(8000);
-                c.setReadTimeout(8000);
-                c.setRequestProperty("User-Agent", UA);
-                if (c.getResponseCode() != 200) {
-                    return null;
+                try {
+                    c.setInstanceFollowRedirects(true);
+                    c.setConnectTimeout(8000);
+                    c.setReadTimeout(8000);
+                    c.setRequestProperty("User-Agent", UA);
+                    if (c.getResponseCode() != 200) {
+                        return null;
+                    }
+                    return readAll(c.getInputStream(), "UTF-8");
+                } finally {
+                    c.disconnect();
                 }
-                InputStream in = c.getInputStream();
-                ByteArrayOutputStream bo = new ByteArrayOutputStream();
-                byte[] buf = new byte[8192];
-                int n;
-                while ((n = in.read(buf)) > 0) {
-                    bo.write(buf, 0, n);
-                }
-                in.close();
-                c.disconnect();
-                return new String(bo.toByteArray(), "UTF-8");
             } catch (Exception t) {
                 return null;
             }
@@ -130,6 +124,12 @@ public class MainActivity extends Activity {
                     try { web.reload(); } catch (Exception ignored) { }
                 }
             });
+        }
+
+        /** 页面弹层开关状态：设置面板打开时按返回键只关面板，不退出 App */
+        @JavascriptInterface
+        public void setSheetOpen(boolean open) {
+            sheetOpen = open;
         }
 
         /** 分享安装包（#G）：把本机这份 apk 通过微信 / QQ / 蓝牙发给同学 */
@@ -189,7 +189,7 @@ public class MainActivity extends Activity {
                 if (dm == null) {
                     return "no-dm";
                 }
-                String name = "sqzy-timetable-" + version() + ".apk";
+                String name = "sqzy-timetable-" + tag + ".apk";
                 DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
                 lastApkName = name;
                 req.setTitle("宿迁职业技术学院作息时间表 " + tag)
@@ -262,9 +262,6 @@ public class MainActivity extends Activity {
             }
         }
 
-        /** 页面用它比对 program.txt，判断这个安装包本体是不是旧了 */
-        @JavascriptInterface
-
         /** 下载完成后自动打开安装界面：把包从「下载」目录复制到缓存，再用 content:// 拉起系统安装器。
          *  为什么绕这一层：Android 7 起不允许用 file:// 安装（FileUriExposedException），必须走 ContentProvider。 */
         private void registerDownloadReceiver() {
@@ -295,24 +292,67 @@ public class MainActivity extends Activity {
         }
 
         private void openInstaller() {
+            Intent it = prepareInstallIntent();
+            if (it == null) return;
+            try {
+                startActivity(it);
+            } catch (Exception t) {
+                /* 安卓 10+ 后台拉起安装界面可能被系统拦下：退一步发一条
+                   「新版本已下载完成」通知，用户点一下就能继续安装。 */
+                postInstallReadyNotification();
+            }
+        }
+
+        /** 把下载目录里的 apk 复制到 cacheDir/share，返回能拉起系统安装器的 Intent */
+        private Intent prepareInstallIntent() {
             try {
                 File dir = new File(getCacheDir(), "share");
-                if (!dir.exists() && !dir.mkdirs()) return;
+                if (!dir.exists() && !dir.mkdirs()) return null;
                 File src = new File(Environment.getExternalStoragePublicDirectory(
                         Environment.DIRECTORY_DOWNLOADS), lastApkName);
-                if (!src.exists()) return;
+                if (!src.exists()) return null;
                 File out = new File(dir, lastApkName);
                 copyFile(src, out);
                 Intent it = new Intent(Intent.ACTION_VIEW);
                 it.setDataAndType(Uri.parse("content://com.sqzytc.timetable.files/" + lastApkName),
                         "application/vnd.android.package-archive");
                 it.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivity(it);
+                return it;
             } catch (Exception t) {
-                try { openAppSettings(); } catch (Exception ignored) { }
+                return null;
             }
         }
 
+        private void postInstallReadyNotification() {
+            Intent it = prepareInstallIntent();
+            if (it == null) return;
+            try {
+                ensureChannel();
+                NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                if (nm == null) return;
+                int piFlags = PendingIntent.FLAG_UPDATE_CURRENT;
+                if (Build.VERSION.SDK_INT >= 23) {
+                    piFlags |= PendingIntent.FLAG_IMMUTABLE;
+                }
+                PendingIntent pi = PendingIntent.getActivity(MainActivity.this, 1, it, piFlags);
+                Notification.Builder b;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    b = new Notification.Builder(MainActivity.this, CHANNEL_ID);
+                } else {
+                    b = new Notification.Builder(MainActivity.this);
+                }
+                b.setContentTitle("新版本已下载完成")
+                 .setContentText("点这里继续安装")
+                 .setSmallIcon(R.mipmap.ic_launcher)
+                 .setContentIntent(pi)
+                 .setAutoCancel(true);
+                nm.notify(NEXT_ID.getAndIncrement(), b.build());
+            } catch (Exception ignored) {
+            }
+        }
+
+        /** 页面用它比对 program.txt，判断这个安装包本体是不是旧了 */
+        @JavascriptInterface
         public String version() {
             try {
                 return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
@@ -591,6 +631,16 @@ public class MainActivity extends Activity {
         return true;
     }
 
+    private static String readAll(InputStream in, String charset) throws Exception {
+        ByteArrayOutputStream bo = new ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        int n;
+        while ((n = in.read(buf)) > 0) {
+            bo.write(buf, 0, n);
+        }
+        return new String(bo.toByteArray(), charset);
+    }
+
     private static String http(String url) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         try {
@@ -603,15 +653,7 @@ public class MainActivity extends Activity {
             if (code != 200) {
                 throw new IllegalStateException("HTTP " + code);
             }
-            InputStream in = c.getInputStream();
-            ByteArrayOutputStream bo = new ByteArrayOutputStream();
-            byte[] buf = new byte[8192];
-            int n;
-            while ((n = in.read(buf)) > 0) {
-                bo.write(buf, 0, n);
-            }
-            in.close();
-            return new String(bo.toByteArray(), "UTF-8");
+            return readAll(c.getInputStream(), "UTF-8");
         } finally {
             c.disconnect();
         }
@@ -619,15 +661,7 @@ public class MainActivity extends Activity {
 
     private String readAsset(String name) {
         try {
-            InputStream in = getAssets().open(name);
-            ByteArrayOutputStream bo = new ByteArrayOutputStream();
-            byte[] buf = new byte[8192];
-            int n;
-            while ((n = in.read(buf)) > 0) {
-                bo.write(buf, 0, n);
-            }
-            in.close();
-            return new String(bo.toByteArray(), "UTF-8");
+            return readAll(getAssets().open(name), "UTF-8");
         } catch (Exception t) {
             return null;
         }
@@ -638,15 +672,7 @@ public class MainActivity extends Activity {
             if (!f.exists()) {
                 return null;
             }
-            FileInputStream in = new FileInputStream(f);
-            ByteArrayOutputStream bo = new ByteArrayOutputStream();
-            byte[] buf = new byte[8192];
-            int n;
-            while ((n = in.read(buf)) > 0) {
-                bo.write(buf, 0, n);
-            }
-            in.close();
-            return new String(bo.toByteArray(), "UTF-8");
+            return readAll(new FileInputStream(f), "UTF-8");
         } catch (Exception t) {
             return null;
         }
@@ -663,9 +689,17 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (keyCode == KeyEvent.KEYCODE_BACK && web != null && web.canGoBack()) {
-            web.goBack();
-            return true;
+        if (keyCode == KeyEvent.KEYCODE_BACK && web != null) {
+            if (sheetOpen) {
+                /* 设置/弹窗打开时：返回键先关弹窗，不能直接退出到桌面 */
+                web.evaluateJavascript(
+                        "window.SQZY_BACK_CLOSE_SHEET && window.SQZY_BACK_CLOSE_SHEET()", null);
+                return true;
+            }
+            if (web.canGoBack()) {
+                web.goBack();
+                return true;
+            }
         }
         return super.onKeyDown(keyCode, event);
     }

@@ -267,7 +267,16 @@ def run_all(cdp, url, vw, vh):
           bools(cdp, 'getComputedStyle(document.getElementById("vtWrap")).display !== "none"'),
           '竖排时间轴仍隐藏')
     n_blk = bools(cdp, 'document.querySelectorAll("#vtPlot .vt-blk").length')
-    check('竖排时间轴 52 个节块', n_blk == 52, '实际 %s 个' % n_blk)
+    # 休息段已合并显示：周内 52 块；周六=上午4节+1休息（4院×5）；周日=1休息+4晚段（4院×5）；
+    # 放假=1休息（4院×1）。按当前实际作息模板动态断言，节假日/周末不会再误报。
+    sched = cdp.ev('(window.resolveSchedule(new Date()) || {}).label || ""')
+    expected = 52
+    if '周六' in sched or '周日' in sched:
+        expected = 20
+    elif '放假' in sched:
+        expected = 4
+    check('竖排时间轴节块数符合当前作息', n_blk == expected,
+          '实际 %s 个（%s 应为 %s）' % (n_blk, sched, expected))
     cdp.ev('window.SQTC.applyDevice("desktop")')
     time.sleep(0.7)
     check('切回桌面版', cdp.ev('document.documentElement.getAttribute("data-device")') == 'desktop',
@@ -439,6 +448,19 @@ def run_all(cdp, url, vw, vh):
     check('关面板后回到原位置', abs((y2 or 0) - (y_open or 0)) < 6,
           '开面板前 %s → 关面板后 %s' % (y_open, y2))
 
+    # ---------- 7.1 安卓返回键：有弹窗先关弹窗，不退出 App ----------
+    cdp.ev('document.getElementById("setBtn").click()')
+    time.sleep(0.3)
+    back_close = cdp.ev('(function(){var r=window.SQZY_BACK_CLOSE_SHEET();'
+                        'return {r:r,on:document.getElementById("setSheet").classList.contains("on"),'
+                        'lock:document.documentElement.classList.contains("sheet-lock")};})()')
+    check('返回键优先关弹窗（SQZY_BACK_CLOSE_SHEET）',
+          back_close.get('r') is True and back_close.get('on') is False
+          and back_close.get('lock') is False,
+          '结果=%r' % (back_close,))
+    again = cdp.ev('window.SQZY_BACK_CLOSE_SHEET()')
+    check('没有弹窗时返回键不再拦截', again is False, '返回值=%r' % (again,))
+
     cdp.nav(url + '?again=1')
     keep = cdp.ev('(function(){return {min:document.getElementById("setMin").value,'
                   'before:document.getElementById("setBefore").checked,'
@@ -509,22 +531,26 @@ def run_all(cdp, url, vw, vh):
                    'hi:document.getElementById("aboutShell").className,'
                    'btn:getComputedStyle(document.getElementById("aboutDownload")).display,'
                    'dlg:!!document.getElementById("shDlg"),'
+                   'x:!!document.getElementById("shClose"),'
                    'seen:localStorage.getItem("sqzy-seen-shell")};})()')
     check('程序本体落后 → 「关于」里如实写明并给出下载按钮',
           'v2.1.0' in (stale.get('txt') or '') and 'v2.1.1' in (stale.get('txt') or '')
           and stale.get('btn') != 'none' and 'hi' in (stale.get('hi') or ''),
           '关于区=%r' % (stale,))
-    check('程序本体落后 → 弹一次性提示（并记住已提示）',
-          stale.get('dlg') is True and stale.get('seen') == 'v2.1.1', '弹窗=%r' % (stale,))
+    check('程序本体落后 → 强制弹窗更新（没有关闭按钮）',
+          stale.get('dlg') is True and stale.get('x') is False and stale.get('seen') == 'v2.1.1',
+          '弹窗=%r' % (stale,))
     print('    · 关于区原文: %s' % (stale.get('txt') or '')[:64])
-    cdp.ev('(function(){var d=document.getElementById("shClose"); if (d) d.click();})()')
+    cdp.ev('window.SQZY_CLOSE_SHELL_DIALOG()')
     time.sleep(0.3)
-    check('关掉提示后滚动锁也解除',
+    check('测试钩子能关掉强制弹窗且滚动锁解除',
           not bools(cdp, 'document.documentElement.classList.contains("sheet-lock")'), '还被锁着')
     cdp.ev('window.SQZY_APPLYPROGRAM({exe:"v2.1.1", apk:"v2.1.1", tag:"v2.1.1"})')
     time.sleep(0.3)
-    check('同一个新版本只弹一次（不再打扰）',
-          not bools(cdp, '!!document.getElementById("shDlg")'), '又弹了一次')
+    check('同一个旧版本再次检查仍会强制弹窗（直到更新完成）',
+          bools(cdp, '!!document.getElementById("shDlg")'), '没有再次弹出')
+    cdp.ev('window.SQZY_CLOSE_SHELL_DIALOG()')
+    time.sleep(0.3)
 
     cdp.ev('window.SQZY_SETSHELL("v2.1.1")')
     cdp.ev('window.SQZY_APPLYPROGRAM({exe:"v2.1.1", apk:"v2.1.1", tag:"v2.1.1"})')
@@ -577,6 +603,37 @@ def run_all(cdp, url, vw, vh):
                      'return u;})()')
     check('有原生桥时仍然交给系统下载器（存成 .apk、不会被改名）',
           bool(bridged) and 'gitee.com' in str(bridged), '桥收到=%r' % (bridged,))
+    bridged_as = cdp.ev('(function(){document.documentElement.setAttribute("data-android","1");'
+                        'window.__bridgeAs=null;'
+                        'window.SQZY_ANDROID={downloadApkAs:function(u,v){window.__bridgeAs={u:u,v:v};return "ok";}};'
+                        'try{window.SQZY_APK.smart({tag:"v9.9.9",apk:"v9.9.9"});}catch(e){}'
+                        'var b=window.__bridgeAs;'
+                        'delete window.SQZY_ANDROID;'
+                        'document.documentElement.removeAttribute("data-android");'
+                        'return b;})()')
+    check('安卓桥优先按目标版本命名下载（downloadApkAs 收到目标版本）',
+          bool(bridged_as) and 'gitee.com' in str(bridged_as.get('u', '')) and bridged_as.get('v') == 'v9.9.9',
+          '桥收到=%r' % (bridged_as,))
+    auto_dl = cdp.ev('''(function(){
+      document.documentElement.setAttribute("data-android","1");
+      window.__auto=null; window.shellAutoDl=false;
+      localStorage.removeItem("sqzy-seen-shell");
+      window.SQZY_SETSHELL("v2.1.0");
+      window.SQZY_ANDROID={
+        version:function(){return "2.1.0";},
+        downloadApkAs:function(u,v){window.__auto={u:u,v:v};return "ok";}
+      };
+      window.SQZY_APPLYPROGRAM({exe:"v9.9.9",apk:"v9.9.9",tag:"v9.9.9",
+        apkUrl:"https://gitee.com/xyz-225648/sqbwzxsj/releases/download/v9.9.9/x.apk"});
+      var a=window.__auto;
+      try{closeDialog("shDlg");}catch(e){}
+      delete window.SQZY_ANDROID;
+      document.documentElement.removeAttribute("data-android");
+      return a;
+    })()''')
+    check('安卓发现新版本后自动开始下载（不用用户点按钮）',
+          bool(auto_dl) and 'gitee.com' in str(auto_dl.get('u', '')) and auto_dl.get('v') == 'v9.9.9',
+          '自动下载桥收到=%r' % (auto_dl,))
 
     # ---------- 8. 通知判定（假时钟，可复现） ----------
     def arm_clock(hh, mi, day=21):

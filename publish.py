@@ -95,8 +95,10 @@ def main():
     print(chr(10) + '下一步：把 release/ 里的三个文件提交到仓库根目录（注意 > 后面的目标名，别漏）')
     print('  走 PR：python gitee_repo.py branch new release/%s' % ver)
     print('        python gitee_repo.py --branch=release/%s push "release/index.html>index.html" "release/version.txt>version.txt" "release/program.txt>program.txt"' % ver)
-    print('  建发行版时把页面也挂成附件（自动更新第一来源，check_live 会机械校验）：')
-    print('        python gitee_repo.py release upload %s "release/index.html:index.html" ...' % ver)
+    print('  页面热更新：建同名 tag 的发行版，把 index.html 传成附件（自动更新第一来源，check_live 会机械校验）：')
+    print('        python gitee_repo.py release upload %s "release/index.html:index.html"' % ver)
+    print('  程序本体版本（exe/apk）没升时 program.txt 与上一个版本相同，不用换安装包；')
+    print('  升了壳版本时，exe/apk 附件按 program.txt 里的 tag（= 程序本体版本）上传。')
     return 0
 
 

@@ -6,12 +6,14 @@
 窗口变窄时页面会自动切换成竖排时间轴。
 
 自动更新：启动先显示本地版本，后台悄悄去码云检查，有新版本静默热替换。
+页面热更新（version.txt）与程序本体更新（program.txt，exe/apk 重下安装包）分开算。
 
 网页 <-> exe 的通道：exe 起一个只监听 127.0.0.1 的小 HTTP 服务（独立助手进程），
 网页用 fetch 调。不用 pywebview 的 js_api —— 本机 WebView2 与 .NET 版本不匹配时
 window.pywebview.api 整个暴露不出来（实测踩过）。
 """
 import base64
+import hashlib
 def _page_file():
     """页面文件名（P2）：本地开发叫「宿迁职业技术学院作息时间表.html」，仓库里是 index.html。
     仓库只保留一份（避免两份内容漂移），所以这里按顺序找，clone 下来就能直接跑。"""
@@ -40,9 +42,10 @@ import webview
 
 HTML_NAME = _page_file()
 APP_TITLE = '宿迁职业技术学院作息时间表'
-# 桌面壳自己的版本号：必须和页面里的 APP_VERSION、安卓 versionName 一致。
+# 桌面壳自己的版本号（程序本体版本，与页面版本分开算）：
+# 只有改了壳代码、重打 exe 时才升；纯改页面 / calendar.txt 不用动它。
 # 页面拿它跟仓库里的 program.txt 比，用来发现「网页是最新的、但程序本体老了」。
-SHELL_VERSION = 'v2.3.15'
+SHELL_VERSION = 'v2.4.0'
 WEBVIEW2_GUID = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
 
 UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/'
@@ -102,15 +105,23 @@ def is_valid(html):
 
 def load_current_html():
     cached = read_text(os.path.join(cache_dir(), 'index.html'))
+    emb = read_embedded()
     if is_valid(cached):
-        return cached
-    return read_embedded()
+        # 同版本但内容不同（比如线上还是旧页、本机是刚打包的新页）时以内置页为准，
+        # 避免启动热更新把新页面“降级”回线上旧页。
+        if _page_ver(cached) > _page_ver(emb):
+            return cached
+        if _page_ver(cached) == _page_ver(emb) and hashlib.sha256(
+                cached.encode('utf-8')).hexdigest() == hashlib.sha256(emb.encode('utf-8')).hexdigest():
+            return cached
+        return emb
+    return emb
 
 
-def http_text(url):
+def http_text(url, timeout=FETCH_TIMEOUT):
     req = urllib.request.Request(url, headers={
         'User-Agent': UA, 'Cache-Control': 'no-cache', 'Pragma': 'no-cache'})
-    with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read().decode('utf-8', 'replace')
 
 
@@ -208,6 +219,10 @@ def _try_base(base):
         html = fetch_page(version_of_latest(remote_ver))
         if not is_valid(html):
             return None, None
+        # 只升不降：线上页面版本不比内置页新就不写缓存，避免把新打包的页面降级成旧页
+        if _page_ver(html) <= _page_ver(load_current_html()):
+            api_log('线上页面版本不新，跳过缓存覆盖', 'warn')
+            return None, None
         write_text(os.path.join(cache_dir(), 'index.html'), html)
         write_text(os.path.join(cache_dir(), 'version.txt'), remote_ver)
         return html, remote_ver
@@ -215,21 +230,25 @@ def _try_base(base):
         return None, None
 
 
-def fetch_program():
+def fetch_program(deadline=None):
     """程序本体（exe/apk）当前发布的版本：仓库里的 program.txt。
-    网页能热更新，程序本体不能 —— 这个文件就是用来提醒用户「去下新版」的。"""
+    网页能热更新，程序本体不能 —— 这个文件就是用来提醒用户「去下新版」的。
+    deadline 是 /latest 的整体时间预算；到了就返回 None，别让页面一直转圈。"""
     if not UPDATE_BASE:
         return None
     for base in base_candidates():
         for attempt in range(2):
+            if deadline is not None and time.time() > deadline:
+                api_log('program 超时间预算，本轮跳过', 'warn')
+                return None
             try:
-                txt = http_text(base + 'program.txt?t=%d' % int(time.time()))
+                txt = http_text(base + 'program.txt?t=%d' % int(time.time()), timeout=4)
                 m = re.search(r'\{.*\}', txt, re.S)
                 if m:
                     return json.loads(m.group(0))
             except Exception as exc:
                 api_log('program 第%d次失败 %r' % (attempt + 1, exc), 'warn')
-                time.sleep(1)
+                time.sleep(0.5)
     return None
 
 
@@ -578,24 +597,29 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
             api_log('收到 /quit，助手准备退出')
             return
         if u.path == '/latest':
+            # 页面的「检查更新」没有超时兜底，这里必须自己限时：gitee raw 慢的时候
+            # 整个 /latest 控制在 ~8 秒内返回（能拿到多少算多少），别把页面卡成假死。
             info = None
+            deadline = time.time() + 8
             if UPDATE_BASE:
                 for base in base_candidates():
-                    # version.txt 的 CDN 缓存偶尔会慢一拍，重试两次再放弃
-                    for attempt in range(3):
+                    for attempt in range(2):
+                        if time.time() > deadline:
+                            break
                         try:
-                            txt = http_text(base + 'version.txt?t=%d' % int(time.time()))
+                            txt = http_text(base + 'version.txt?t=%d' % int(time.time()), timeout=4)
                             m = re.search(r'\{.*\}', txt, re.S)
                             if m:
                                 info = json.loads(m.group(0))
                                 break
                         except Exception as exc:
                             api_log('latest 第%d次失败 %r' % (attempt + 1, exc), 'warn')
-                            time.sleep(1)
+                            time.sleep(0.5)
                     if info:
                         break
+            program = fetch_program(deadline) if info else None
             api_log('latest -> %r' % (info,))
-            return self._reply({'ok': bool(info), 'latest': info, 'program': fetch_program()})
+            return self._reply({'ok': bool(info), 'latest': info, 'program': program})
         if u.path == '/notify':
             title = q.get('title', [''])[0][:80]
             body = q.get('body', [''])[0][:180]
@@ -658,8 +682,8 @@ def ascii_safe_url(url):
 
 
 def download_file(url, dest, sha256=None):
-    url = ascii_safe_url(url)
     """下载到临时目录并校验 sha256；返回 (ok, 说明)"""
+    url = ascii_safe_url(url)
     try:
         req = urllib.request.Request(url, headers={'User-Agent': UA})
         with urllib.request.urlopen(req, timeout=120) as r, open(dest, 'wb') as f:
@@ -764,6 +788,14 @@ class _ApiServer(socketserver.ThreadingTCPServer):
     """SO_REUSEADDR + 每个连接一个线程；这两个都必须是类属性，构造时就生效"""
     allow_reuse_address = True
     daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        """客户端在收到响应前就断开（浏览器刷新 / 自检脚本退出）会触发
+        ConnectionResetError；记进 api.log 就够，别往 stderr 刷一整段 traceback。"""
+        try:
+            api_log('连接中断 %r：%r' % (client_address, sys.exc_info()[1]), 'warn')
+        except Exception:
+            pass
 
 
 def run_api_server(port):
@@ -1302,7 +1334,7 @@ def run_window(html):
         _PORT[0] = 0
         port = 0
 
-    opts = dict(width=1120, height=760, min_size=(340, 480), resizable=True,
+    opts = dict(width=1120, height=880, min_size=(340, 560), resizable=True,
                 text_select=False, confirm_close=False, background_color='#f1f5f9')
     if port:
         # 有助手进程就让它把页面用 http 发出来（真实 origin → localStorage 可用）

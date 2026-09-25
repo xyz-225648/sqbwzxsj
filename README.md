@@ -2,7 +2,25 @@
 
 四个学院（信息设计 / 信息基础 / 通识教育 / 女子教育）的一日作息时间轴，**Windows 桌面版 / 安卓手机版 / 浏览器网页版** 三端通用。
 
-当前版本：**v2.3.15**
+当前版本：**v2.4.0**
+
+## 目录
+
+- [下载使用](#下载使用)
+- [功能](#功能)
+- [设置](#设置)
+- [自动更新](#自动更新)
+- [版本号规范](#版本号规范)
+- [开发 & 编译打包](#开发--编译打包)
+- [仓库文件说明](#仓库文件说明)
+- [自检脚本](#自检脚本)
+- [常见问题](#常见问题)
+- [关于「无法识别的应用」提示 / 杀软报警](#关于无法识别的应用提示--杀软报警)
+- [开发流程（issue → 分支 → Pull Request → 合并）](#开发流程issue--分支--pull-request--合并)
+- [本地接口与安全](#本地接口与安全)
+- [发布规则](#发布规则)
+- [GitHub 镜像](#github-镜像)
+- [许可](#许可)
 
 ## 下载使用
 
@@ -69,8 +87,8 @@
 软件启动时先秒开本地版本，再后台去码云问一句「有没有新版本」，有就静默替换新页面。
 
 仓库里还有一份 `program.txt`：它记录当前发布的 **exe / apk 版本**，以及两个发行包的**直链、sha256、字节数**
-（由 `make_program_txt.py` 从本地发行包算出来）。网页能自动热更新、程序本体不能，
-所以页面会拿它比一次 —— 发现自己落后就在「设置 → 关于」提示「程序本体有新版」：
+（由 `make_program_txt.py` 从 `app.py` 的 `SHELL_VERSION` 与安卓 `versionName` 读出程序本体版本，再算本地发行包）。
+网页能自动热更新、程序本体不能，所以页面会拿它比一次 —— 发现自己落后就在「设置 → 关于」提示「程序本体有新版」：
 
 - Windows：给出「**一键更新**」，页面把直链和 sha256 交给 exe 的本地接口
   `/download`（下载 + 校验）→ `/apply`（写一个替换脚本，等本进程退出后 `move` 覆盖自身并重启）。
@@ -78,7 +96,9 @@
 - 安卓：走 DownloadManager 后台下载，下完点通知安装，覆盖安装不会丢数据。
 
 **改课表只需要动 index.html 和 version.txt**，所有人下次打开就是最新的，不用重装。
-换 exe / apk 才算「发新版」，那时才需要在发行版里替换附件。
+**热更新与程序本体更新分开算**：纯页面 / 数据变更只升页面版本（`APP_VERSION` → `version.txt`），
+`program.txt` 原样不动，用户只会热更新、不会收到「程序本体有新版」；只有换了 exe / apk
+（重打安装包）才升 `SHELL_VERSION` / 安卓 `versionName`，那时才需要新建发行版替换附件。
 
 > **页面本体按三个来源依次取**（2026-09-25 起，桌面版与安卓版同一套顺序）：
 > ① 发行版附件 `releases/download/<版本号>/index.html` → ② 码云 contents API（base64）→ ③ 仓库 raw。
@@ -91,6 +111,18 @@
 
 ## 版本号规范
 
+两个版本号**分开算、各管各的**：
+
+| 版本号 | 管什么 | 什么时候升 | 写在哪里 |
+|---|---|---|---|
+| **页面版本**（热更新） | 网页本体 / 课表数据 | 改 `index.html`（或 `calendar.txt`）就升 | 页面 `APP_VERSION`；发布时自动写进 `version.txt` |
+| **程序本体版本**（重下安装包） | exe / apk 的壳 | **只有重打安装包才升** | `app.py` 的 `SHELL_VERSION`（exe）；`.apkbuild/app/AndroidManifest.xml` 的 `versionName` / `versionCode`（apk） |
+
+- 纯页面 / 数据变更：只升**页面版本**，`program.txt` 原样不动 → 用户只会热更新，**不会**被提示重下安装包。
+- 壳代码变更：升 `SHELL_VERSION` 和 `versionName` / `versionCode`，重打 exe / apk，
+  `make_program_txt.py` 会把新的程序本体版本、直链、sha256 写进 `program.txt` → 用户才会看到「程序本体有新版」。
+- 两者可以相同，也可以不同（页面比壳新、壳比页面新都允许）；段位含义不变：
+
     V主.次.补丁
 
 | 段位 | 什么时候加 | 例子 |
@@ -99,8 +131,28 @@
 | **次版本** | 新增普通功能、界面优化 | V2.0 → V2.1 |
 | **补丁号** | Bug 修复、微小调整（不新增功能） | V2.0.0 → V2.0.1 |
 
-页面里的 APP_VERSION、version.txt、安卓 versionName 三处必须一致；
-发布脚本直接从页面里读版本号写进 version.txt，不会对不上。
+发布脚本直接从页面里读版本号写进 `version.txt`，不会对不上。
+
+## 开发 & 编译打包
+
+```bash
+# 1) 页面：本地直接打开开发源文件（中文名那份），或起本地静态服务
+python -m http.server 8123
+
+# 2) 发布闸门（生成 release/{index.html,version.txt,program.txt}，任何一项不过就中止）
+python publish.py          # Windows 上没 bash 也能跑；bash publish.sh 只是转发
+
+# 3) Windows EXE（PyInstaller onefile；产物是 dist/sqzy_schedule.exe）
+python -m PyInstaller --noconfirm --clean --onefile --windowed \
+  --name sqzy_schedule --icon app.ico \
+  --add-data "宿迁职业技术学院作息时间表.html;." \
+  --hidden-import webview.platforms.edgechromium app.py
+
+# 4) 安卓 APK（产物覆盖仓库根目录的 宿迁职业技术学院作息时间表.apk）
+python .apkbuild/build_apk.py
+```
+
+依赖：Windows 上需要 Python 3 + `pywebview` + `PyInstaller`；安卓打包需要 JDK（`.apkbuild/tools/jdk` 已内置）与 Android SDK build-tools（`.apkbuild/tools/sdk` 已内置）。
 
 ## 仓库文件说明
 
@@ -110,7 +162,7 @@
 | version.txt | 版本标记，内容变了才触发更新 |
 | app.py | Windows 桌面版源码（pywebview + WebView2） |
 | publish.py | 一键发布：先过全部自检（逻辑断言 / 语法 / 渲染冒烟 / 交互遍历 / 接口），再生成 release/ 里的三个文件（`publish.sh` 只是转发到它，Windows 上没有 bash 也能发） |
-| make_program_txt.py | 生成 program.txt：exe/apk 版本、直链、sha256、字节数，以及 apk 的仓库镜像路径 / 代理 CDN 线路 |
+| make_program_txt.py | 生成 program.txt：程序本体版本（读 app.py 的 `SHELL_VERSION` 与安卓 `versionName`，与页面版本分开算）、直链、sha256、字节数，以及 apk 的仓库镜像路径 / 代理 CDN 线路 |
 | apk/sqzy-timetable-<tag>.apk | 每个版本提交一份 apk 副本：给「浏览器也要存成 .apk」用的镜像源（约 120 KB/版） |
 | set-update-url.sh | 给二次开发者用：改自动更新地址并重新打包 |
 | check_live.py | 发布之后核验线上：网页、版本号、两个下载链接跟本地是否一致 |
@@ -131,7 +183,7 @@
 | verify_schedule.js | 作息逻辑断言 30 条（周六/周日/放假/优先级；需要 node） |
 | check_page.py | 页面内联脚本语法检查（node --check） |
 | smoke_page.py | 无头浏览器渲染冒烟：三档视口 + 安卓 UA，抓未捕获异常和「功能没渲染出来」；另有三个**定时刻**断言（注入假时钟 + 作息模板覆盖）：周三 10:00 要报「下课」倒计时、周六 17:30 要报「还有 1 小时 30 分钟关寝」、周日 09:00 一条都不该有 —— 跟「今天是周几 / 是不是节假日」脱钩 |
-| functest_page.py | 无头浏览器 + CDP **交互遍历**（当前 **82 项**）：悬停/钉住、设置保存、通知判定、更新弹窗、缩放、防调试，以及安装包下载路径（镜像线路齐全、浏览器路径文件名必须以 `.apk` 结尾、blob 真拿到字节、有原生桥时交给系统下载器） |
+| functest_page.py | 无头浏览器 + CDP **交互遍历**（当前 **86 项**）：悬停/钉住、设置保存、通知判定、更新弹窗、缩放、防调试，以及安装包下载路径（镜像线路齐全、浏览器路径文件名必须以 `.apk` 结尾、blob 真拿到字节、有原生桥时交给系统下载器并按目标版本命名、返回键先关弹窗） |
 | selftest_api.py | 桌面版本地接口自检：/ping /state /notify /latest /quit，外加一键更新的 `/download`（无令牌 403、非 gitee 地址被拒）与 `/apply`（源码模式必须拒绝自我替换）、`sqzy:` 协议指向本程序 |
 | functest_app.py | 桌面外壳端到端：真的开一个窗口，验单实例、托盘、置顶、退出（**只能跑 Windows**，别的平台返回 3 = 没执行，不算通过） |
 | check_live.py | 发布**之后**跑：核验线上网页 / version.txt / exe、apk 下载链接与本地一致 |
