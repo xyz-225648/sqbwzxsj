@@ -3,6 +3,28 @@
 版本号规范：V主.次.补丁 —— **主版本**＝架构改动 / 重大功能，**次版本**＝新功能与界面优化，
 **补丁号**＝Bug 修复与微小调整（不新增功能）。
 
+## v2.3.15
+
+### 修复
+
+- **网页热更新断了（码云 raw 现在挡大文件）**：码云 raw 对**大文件**直接返回
+  `451 The content may contain violation information` —— 实测同一个仓库里 **≤24 KB 正常、≥39 KB 全被挡**，
+  跟内容无关（同一份内容改成 `.txt`、换文件名、带 token、带 Referer 都一样）。
+  而页面有 148 KB，两个壳的自动更新都只走 `raw/master/index.html` ——
+  结果是**用户永远只能看到安装包里内置的旧页面**，「网页内容自动更新、无需操作」这句等于失效了。
+  现在页面本体按可靠性依次取（`app.py` 与 `MainActivity.java` 同一套顺序）：
+  1. **发行版附件** `releases/download/<版本号>/index.html`（走码云自己的 CDN，最稳，tag 就是版本号）；
+  2. **contents API**（匿名可读、内容永远跟仓库一致，base64 解一下）；
+  3. `raw`（小文件最快；大文件会 451，留着不亏）。
+  `version.txt` / `program.txt` 很小，仍然走 raw（实测正常）。
+
+### 变更（发布流程）
+
+- **每次发布要把 `index.html` 也传成发行版附件**：`python gitee_repo.py release upload <tag> release/index.html:index.html …`。
+  `check_live.py` 加了机械校验：发行版附件里没有 / 对不上 `index.html` 就直接判 FAIL，不靠记性。
+- `check_live.py` 的线上页面核验也改成同一条来源链，并会把实际来源打出来（以前只查 raw，被 451 挡就假失败）。
+
+---
 ## v2.3.14
 
 ### 修复
