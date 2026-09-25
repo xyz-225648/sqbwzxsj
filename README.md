@@ -2,7 +2,7 @@
 
 四个学院（信息设计 / 信息基础 / 通识教育 / 女子教育）的一日作息时间轴，**Windows 桌面版 / 安卓手机版 / 浏览器网页版** 三端通用。
 
-当前版本：**v2.4.0**
+当前版本：**v2.4.1**
 
 ## 目录
 
@@ -150,6 +150,9 @@ python -m PyInstaller --noconfirm --clean --onefile --windowed \
 
 # 4) 安卓 APK（产物覆盖仓库根目录的 宿迁职业技术学院作息时间表.apk）
 python .apkbuild/build_apk.py
+
+# 5) 按版本号备份本次构建产物（exe/apk → backups/，防止后续版本覆盖丢失）
+python backup_build.py
 ```
 
 依赖：Windows 上需要 Python 3 + `pywebview` + `PyInstaller`；安卓打包需要 JDK（`.apkbuild/tools/jdk` 已内置）与 Android SDK build-tools（`.apkbuild/tools/sdk` 已内置）。
