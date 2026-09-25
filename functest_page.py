@@ -337,9 +337,23 @@ def run_all(cdp, url, vw, vh):
     cdp.ev('window.scrollTo(0,0)')
     time.sleep(0.2)
     cdp.ev('document.querySelectorAll("#gGrid .g-lane .g-name")[1].click()')
-    time.sleep(0.5)
-    check('点学院名跳到对应卡片并高亮（校历重绘后仍有效）',
-          bools(cdp, '!!document.querySelector("#cards .card.flash")'), '卡片没有 flash')
+    # 轮询 1.8 秒：点一下就同步加上 flash 了，但卡片若正好被重绘（校历回调/跨天）会换成新节点，
+    # 单点采样容易假失败。轮询只放宽读取时机，不放宽'点了没反应'这件事。
+    flash = 0
+    for _ in range(12):
+        time.sleep(0.15)
+        flash = cdp.ev('document.querySelectorAll("#cards .card.flash").length') or 0
+        if flash:
+            break
+    if not flash:
+        print('    · 点击诊断 %r' % (cdp.ev('''(function(){
+            var n = document.querySelectorAll("#gGrid .g-lane .g-name")[1];
+            var cards = [].slice.call(document.querySelectorAll("#cards .card"));
+            return {name: !!n, title: n ? n.title : '', cards: cards.length,
+                    cls: cards.map(function(c){ return c.className; }),
+                    sheets: document.querySelectorAll('.sheet.on').length,
+                    y: window.pageYOffset};})()'''),))
+    check('点学院名跳到对应卡片并高亮（校历重绘后仍有效）', bool(flash), '卡片没有 flash')
 
     # ---------- 5. 回到顶部 ----------
     # 页面中途可能自己弹一层（线上版本数据比本地页面新时的「发现新版本」），

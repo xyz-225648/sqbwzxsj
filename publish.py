@@ -92,9 +92,11 @@ def main():
     print('   version.txt  %s' % io.open(os.path.join(out, 'version.txt'), encoding='utf-8').read().strip())
     print('   program.txt  %s' % io.open(os.path.join(out, 'program.txt'), encoding='utf-8').read().strip())
     print('=' * 48)
-    print(chr(10) + '下一步：把 release/ 里的 index.html、version.txt、program.txt 提交到仓库根目录')
+    print(chr(10) + '下一步：把 release/ 里的三个文件提交到仓库根目录（注意 > 后面的目标名，别漏）')
     print('  走 PR：python gitee_repo.py branch new release/%s' % ver)
-    print('        python gitee_repo.py --branch=release/%s push release/index.html>index.html release/version.txt release/program.txt' % ver)
+    print('        python gitee_repo.py --branch=release/%s push "release/index.html>index.html" "release/version.txt>version.txt" "release/program.txt>program.txt"' % ver)
+    print('  建发行版时把页面也挂成附件（自动更新第一来源，check_live 会机械校验）：')
+    print('        python gitee_repo.py release upload %s "release/index.html:index.html" ...' % ver)
     return 0
 
 

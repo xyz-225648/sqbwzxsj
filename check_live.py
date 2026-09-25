@@ -3,7 +3,7 @@
 
 用法: python check_live.py
 """
-import hashlib, json, os, re, sys, time, urllib.parse, urllib.request
+import base64, hashlib, json, os, re, sys, time, urllib.parse, urllib.request
 
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -12,6 +12,7 @@ except Exception:
 
 RAW = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/'
 REL = 'https://gitee.com/xyz-225648/sqbwzxsj/releases/download/'
+API_PAGE = 'https://gitee.com/api/v5/repos/xyz-225648/sqbwzxsj/contents/index.html?ref=master'
 UA = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36',
       'Cache-Control': 'no-cache'}
 PAGE = '宿迁职业技术学院作息时间表.html'
@@ -32,6 +33,16 @@ def get(url, tries=6, timeout=60):
     return None
 
 
+def get_once(url, timeout=60):
+    """只试一次（不重试）：给"来源链"用，别在一个注定拿不到的来源上耗 36 秒"""
+    try:
+        req = urllib.request.Request(url, headers=UA)
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.read()
+    except Exception:
+        return None
+
+
 def say(ok_flag, text):
     print('  %s %s' % ('✓' if ok_flag else '✗', text))
     if not ok_flag:
@@ -40,14 +51,40 @@ def say(ok_flag, text):
 
 local_page = open(PAGE, 'rb').read()
 local_ver = open('release/version.txt', encoding='utf-8').read().strip()
-live_page = get(RAW + 'index.html')
+app_v = re.search(r"var APP_VERSION = '([^']+)'", local_page.decode('utf-8')).group(1)
+_tag = re.search(r"var RELEASE_TAG = '([^']+)'", local_page.decode('utf-8'))
+tag = _tag.group(1) if _tag else app_v
+
+# 页面本体跟两个壳的取法保持一致：发行版附件 → contents API → raw。
+# 码云 raw 对 >~25 KB 的文件返回 451「The content may contain violation information」
+# （实测 ≤24 KB 正常、≥39 KB 被挡，跟内容无关），页面有 148 KB —— 只查 raw 会一直假失败，
+# 而且测不出用户到底拿不拿得到新页面。
+_chain = [('发行版附件', REL + tag + '/index.html'),
+          ('contents API', API_PAGE),
+          ('raw', RAW + 'index.html')]
+src, live_page = '(取不到)', b''
+for _label, _url in _chain:
+    _body = get_once(_url)
+    if not _body:
+        continue
+    if _label == 'contents API':
+        try:
+            _body = base64.b64decode(json.loads(_body.decode('utf-8'))['content'].replace(chr(10), ''))
+        except Exception:
+            continue
+    if _body:
+        src, live_page = _label, _body
+        break
+say(live_page == local_page, '线上页面可取且与本地一致（来源 %s，%d 字节，md5 %s）'
+    % (src, len(local_page), hashlib.md5(local_page).hexdigest()[:10]))
+if src != '发行版附件':
+    say(False, '发行版附件 index.html 拿不到 —— 发布时要把 release/index.html 也传成发行版附件（自动更新第一来源）')
+if src != 'raw':
+    print('    · 码云 raw 取不到 index.html（大文件被 451 挡）；壳会自动走发行版附件 / contents API')
 live_ver = (get(RAW + 'version.txt') or b'').decode('utf-8').strip()
-say(live_page == local_page, '线上 index.html 与本地一致（%d 字节，md5 %s）'
-    % (len(local_page), hashlib.md5(local_page).hexdigest()[:10]))
 say(live_ver == local_ver, '线上 version.txt 与本地一致：%s' % live_ver[:80])
 m = re.search(r'\{.*\}', live_ver, re.S)
 live_v = json.loads(m.group(0))['v'] if m else '?'
-app_v = re.search(r"var APP_VERSION = '([^']+)'", local_page.decode('utf-8')).group(1)
 say(live_v == app_v, '线上版本号 %s == 页面 APP_VERSION %s' % (live_v, app_v))
 
 # 发布后必须同步更新 README（用户要求，也踩过：README 落后过两版）——这里机械校验，不靠记性
@@ -63,7 +100,6 @@ if mp:
     say(prog.get('exe') == app_v and prog.get('apk') == app_v,
         'program.txt 里的程序本体版本 == 页面版本（%s / %s，页面 %s）'
         % (prog.get('exe'), prog.get('apk'), app_v))
-tag = re.search(r"var RELEASE_TAG = '([^']+)'", local_page.decode('utf-8')).group(1)
 for label, ext in (('安卓安装包', 'apk'), ('Windows 程序', 'exe')):
     name = '宿迁职业技术学院作息时间表.' + ext
     data = get(REL + tag + '/' + urllib.parse.quote(name))

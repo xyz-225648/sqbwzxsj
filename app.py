@@ -42,10 +42,13 @@ HTML_NAME = _page_file()
 APP_TITLE = '宿迁职业技术学院作息时间表'
 # 桌面壳自己的版本号：必须和页面里的 APP_VERSION、安卓 versionName 一致。
 # 页面拿它跟仓库里的 program.txt 比，用来发现「网页是最新的、但程序本体老了」。
-SHELL_VERSION = 'v2.3.14'
+SHELL_VERSION = 'v2.3.15'
 WEBVIEW2_GUID = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
 
 UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/'
+# 页面本体的备用来源（见 page_candidates）：发行版附件 + contents API
+RELEASE_DL = 'https://gitee.com/xyz-225648/sqbwzxsj/releases/download/'
+API_PAGE = 'https://gitee.com/api/v5/repos/xyz-225648/sqbwzxsj/contents/index.html?ref=master'
 FETCH_TIMEOUT = 8
 UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
@@ -138,6 +141,60 @@ def base_candidates():
     return out
 
 
+def version_of_latest(text):
+    """从 version.txt 的内容里取出版本号（window.SQZY_LATEST={"v": "v2.3.15", ...}）。"""
+    m = re.search(r'"v"\s*:\s*"(v?[0-9.]+)"', text or '')
+    if not m:
+        return ''
+    v = m.group(1)
+    return v if v.startswith('v') else 'v' + v
+
+
+def page_candidates(ver=''):
+    """页面本体（index.html）的取法，按可靠性排序。
+
+    为什么要一串：码云 raw 对**大文件**直接返回
+      451 The content may contain violation information
+    （2026-09-25 实测：同一个仓库里 ≤24 KB 正常、≥39 KB 全被挡，跟内容无关），
+    而页面有 148 KB —— 只走 raw 的话「网页热更新」等于断了（用户只会一直看到内置的旧页面）。
+      1) 发行版附件：index.html 也挂一份到 release 上，走码云自己的 CDN，tag 就是版本号
+      2) contents API：匿名可读、内容永远跟仓库一致（base64 解一下）
+      3) raw：文件小的时候最快；大文件会 451，留着不亏
+    """
+    out = []
+    v = (ver or '').strip()
+    if v and not v.startswith('v'):
+        v = 'v' + v
+    if re.match(r'^v[0-9.]+$', v or ''):
+        out.append(('release', RELEASE_DL + v + '/index.html'))
+    out.append(('api', API_PAGE))
+    for b in base_candidates():
+        out.append(('raw', b + 'index.html'))
+    return out
+
+
+def _page_from_body(kind, body):
+    if kind == 'api':
+        o = json.loads(body)
+        return base64.b64decode(o['content'].replace(chr(10), '')).decode('utf-8')
+    return body
+
+
+def fetch_page(ver=''):
+    """按上面的顺序取页面，返回第一个通过校验的；全失败返回 None。"""
+    for kind, url in page_candidates(ver):
+        try:
+            html = _page_from_body(kind, http_text(url))
+        except Exception as exc:
+            api_log('页面来源 %s 取不到：%r' % (kind, exc), 'warn')
+            continue
+        if is_valid(html):
+            api_log('页面来源 %s 成功（%d 字节）' % (kind, len(html)))
+            return html
+        api_log('页面来源 %s 拿到了但校验没过（%d 字节）' % (kind, len(html or '')), 'warn')
+    return None
+
+
 def _try_base(base):
     try:
         lines = http_text(base + 'version.txt').strip().splitlines()
@@ -147,7 +204,8 @@ def _try_base(base):
         local_ver = (read_text(os.path.join(cache_dir(), 'version.txt')) or '').strip()
         if remote_ver == local_ver:
             return None, None
-        html = http_text(base + 'index.html')
+        # 页面本体走来源链（raw 对大文件会 451；version.txt 很小，raw 依然好使）
+        html = fetch_page(version_of_latest(remote_ver))
         if not is_valid(html):
             return None, None
         write_text(os.path.join(cache_dir(), 'index.html'), html)
