@@ -295,6 +295,8 @@ public class MainActivity extends Activity {
             Intent it = prepareInstallIntent();
             if (it == null) return;
             try {
+                /* 下载完直接拉起系统安装器，不做任何预先跳转设置的动作。
+                   若系统因「未允许安装未知应用」拦截，由系统安装器自己给用户引导。 */
                 startActivity(it);
             } catch (Exception t) {
                 /* 安卓 10+ 后台拉起安装界面可能被系统拦下：退一步发一条
