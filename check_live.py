@@ -71,6 +71,16 @@ app_v = re.search(r"var APP_VERSION = '([^']+)'", local_page.decode('utf-8')).gr
 _tag = re.search(r"var RELEASE_TAG = '([^']+)'", local_page.decode('utf-8'))
 tag = _tag.group(1) if _tag else app_v
 
+# 程序本体版本与页面版本分开算：exe 读 app.py 的 SHELL_VERSION，apk 读 AndroidManifest 的
+# versionName。只有重打安装包才升它们；纯页面 / 数据变更只升页面版本（version.txt）。
+_shell_m = re.search(r"SHELL_VERSION = '([^']+)'", open('app.py', encoding='utf-8').read())
+shell_ver = ('v' + _shell_m.group(1).lstrip('v')) if _shell_m else '?'
+_manifest = open('.apkbuild/app/AndroidManifest.xml', encoding='utf-8').read()
+_man_m = re.search(r'android:versionName="([^"]+)"', _manifest)
+apk_manifest_ver = ('v' + _man_m.group(1).lstrip('v')) if _man_m else '?'
+if shell_ver != app_v:
+    print('    · 页面版本 %s 与程序本体版本 %s 不同（已分开算：页面走热更新，程序本体才提示重下）' % (app_v, shell_ver))
+
 # 页面本体跟两个壳的取法保持一致：发行版附件 → contents API → raw。
 # 码云 raw 对 >~25 KB 的文件返回 451「The content may contain violation information」
 # （实测 ≤24 KB 正常、≥39 KB 被挡，跟内容无关），页面有 148 KB —— 只查 raw 会一直假失败，
@@ -113,19 +123,31 @@ _prog_body, ok_prog = get_fresh(RAW + 'program.txt', local_prog)
 live_prog = (_prog_body or b'').decode('utf-8', 'replace').strip()
 say(ok_prog, '线上 program.txt 与本地一致：%s' % live_prog[:80])
 mp = re.search(r'\{.*\}', live_prog, re.S)
+prog = {}
+prog_tag = tag
 if mp:
     prog = json.loads(mp.group(0))
-    say(prog.get('exe') == app_v and prog.get('apk') == app_v,
-        'program.txt 里的程序本体版本 == 页面版本（%s / %s，页面 %s）'
-        % (prog.get('exe'), prog.get('apk'), app_v))
+    say(prog.get('exe') == shell_ver and prog.get('apk') == apk_manifest_ver,
+        'program.txt 里的程序本体版本 == 壳版本（exe %s / apk %s，app.py %s / manifest %s）'
+        % (prog.get('exe'), prog.get('apk'), shell_ver, apk_manifest_ver))
+    say(prog.get('tag') == prog.get('exe') == prog.get('apk'),
+        'program.txt 的 tag 与 exe/apk 版本一致（%s）' % prog.get('tag'))
+    if prog.get('tag'):
+        prog_tag = prog.get('tag')
+else:
+    say(False, '线上 program.txt 解析不出 JSON')
 for label, ext in (('安卓安装包', 'apk'), ('Windows 程序', 'exe')):
     name = '宿迁职业技术学院作息时间表.' + ext
-    data = get(REL + tag + '/' + urllib.parse.quote(name))
-    local = open(name, 'rb').read()
-    say(data == local, '%s 下载可用且与本地一致（%s，md5 %s）'
-        % (label, tag, hashlib.md5(local).hexdigest()[:10]))
+    data = get(REL + prog_tag + '/' + urllib.parse.quote(name))
+    try:
+        local = open(name, 'rb').read()
+    except Exception as _e:
+        say(False, '%s 本地文件 %s 读不到（%r）—— 换安装包才需要重打并放一份在仓库根目录' % (label, name, _e))
+        continue
+    say(data == local, '%s 下载可用且与本地一致（tag %s，md5 %s）'
+        % (label, prog_tag, hashlib.md5(local).hexdigest()[:10]))
 
-# 闸门：APK 内部的 versionName 必须等于页面 APP_VERSION
+# 闸门：APK 内部的 versionName 必须等于 program.txt 里的 apk 版本
 # （v2.3.2 发布时 APK 编译失败、附件仍是旧构建，但哈希一致，所以只有比版本号才拦得住）
 import glob as _glob, subprocess as _sub
 _aapt = _glob.glob(os.path.join(".apkbuild", "tools", "sdk", "build-tools", "*", "aapt2.exe"))
@@ -136,7 +158,8 @@ if _aapt and os.path.exists(_apk):
                         encoding="utf-8", errors="replace").stdout
         _m = __import__("re").search(r"versionName=.(\d+\.\d+\.\d+)", _out or "")
         _vn = _m.group(1) if _m else "?"
-        say(_vn == app_v.lstrip("v"), "APK 内部版本 %s == 页面 APP_VERSION %s" % (_vn, app_v))
+        _want = (prog.get('apk') or apk_manifest_ver).lstrip('v')
+        say(_vn == _want, "APK 内部版本 %s == program.txt apk 版本 %s" % (_vn, _want))
     except Exception as _e:
         say(False, "APK 版本核验失败：%r" % (_e,))
 else:
