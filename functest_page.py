@@ -51,6 +51,16 @@ BROWSERS = [
     r"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
 ]
 # P4：找不到浏览器时**必须报错**，不能静默当成 PASS（否则闸门空转、发布质量无保障）
+
+# 把 PATH 里能找到的浏览器补进候选表：
+# 原来只查硬编码路径，/usr/local/bin/chromium 这种（PATH 可达但不在表里）会被误判成"没有浏览器"，
+# 于是 smoke 静默跳过（exit 0）、functest 误报找不到（exit 2）。
+for _n in ('msedge', 'microsoft-edge', 'google-chrome',
+           'google-chrome-stable', 'chromium', 'chromium-browser', 'chrome'):
+    _w = shutil.which(_n)
+    if _w and _w not in BROWSERS:
+        BROWSERS.insert(0, _w)
+
 import shutil as _shutil
 if not any(os.path.exists(_b) for _b in BROWSERS) and not any(
         _shutil.which(_b) for _b in ('msedge', 'microsoft-edge', 'google-chrome',

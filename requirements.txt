@@ -1,0 +1,8 @@
+# 发布自检脚本的依赖（publish.sh 依次串联的那些）
+# 安装： pip install -r requirements.txt
+#
+# 注意：node 不在 pip 里，需要另外装（nodejs.org 或系统包管理器）——
+#       check_page.py / verify_schedule.js 依赖它。
+
+websocket-client>=1.6      # functest_page.py：CDP 交互遍历走 WebSocket
+pywebview>=5              # app.py：桌面版外壳（selftest_api.py 会启动它）
