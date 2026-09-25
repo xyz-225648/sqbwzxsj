@@ -102,7 +102,7 @@
 | index.html | 网页主体，也是自动更新的内容源（本地开发时页面源码叫「宿迁职业技术学院作息时间表.html」，publish.sh 会把它复制成 index.html；仓库里只保留一份，避免重复） |
 | version.txt | 版本标记，内容变了才触发更新 |
 | app.py | Windows 桌面版源码（pywebview + WebView2） |
-| publish.sh | 一键发布：先过全部自检，再生成 release/ 里的三个文件 |
+| publish.py | 一键发布：先过全部自检（逻辑断言 / 语法 / 渲染冒烟 / 交互遍历 / 接口），再生成 release/ 里的三个文件（`publish.sh` 只是转发到它，Windows 上没有 bash 也能发） |
 | make_program_txt.py | 生成 program.txt：exe/apk 版本、直链、sha256、字节数，以及 apk 的仓库镜像路径 / 代理 CDN 线路 |
 | apk/sqzy-timetable-<tag>.apk | 每个版本提交一份 apk 副本：给「浏览器也要存成 .apk」用的镜像源（约 120 KB/版） |
 | set-update-url.sh | 给二次开发者用：改自动更新地址并重新打包 |
@@ -117,15 +117,16 @@
 
 ## 自检脚本
 
-发布前 publish.sh 会依次强制跑一遍，任何一项不过就中止发布：
+发布前 `python publish.py`（`bash publish.sh` 只是它的转发）会依次强制跑一遍，任何一项不过就中止发布：
 
 | 脚本 | 作用 |
 |---|---|
+| verify_schedule.js | 作息逻辑断言 30 条（周六/周日/放假/优先级；需要 node） |
 | check_page.py | 页面内联脚本语法检查（node --check） |
-| smoke_page.py | 无头浏览器渲染冒烟：三档视口 + 安卓 UA，抓未捕获异常和「功能没渲染出来」 |
-| functest_page.py | 无头浏览器 + CDP **交互遍历**（当前 **80 项**）：悬停/钉住、设置保存、通知判定、更新弹窗、缩放、防调试，以及安装包下载路径（镜像线路齐全、浏览器路径文件名必须以 `.apk` 结尾、blob 真拿到字节、有原生桥时交给系统下载器） |
+| smoke_page.py | 无头浏览器渲染冒烟：三档视口 + 安卓 UA，抓未捕获异常和「功能没渲染出来」；另有三个**定时刻**断言（注入假时钟 + 作息模板覆盖）：周三 10:00 要报「下课」倒计时、周六 17:30 要报「还有 1 小时 30 分钟关寝」、周日 09:00 一条都不该有 —— 跟「今天是周几 / 是不是节假日」脱钩 |
+| functest_page.py | 无头浏览器 + CDP **交互遍历**（当前 **82 项**）：悬停/钉住、设置保存、通知判定、更新弹窗、缩放、防调试，以及安装包下载路径（镜像线路齐全、浏览器路径文件名必须以 `.apk` 结尾、blob 真拿到字节、有原生桥时交给系统下载器） |
 | selftest_api.py | 桌面版本地接口自检：/ping /state /notify /latest /quit，外加一键更新的 `/download`（无令牌 403、非 gitee 地址被拒）与 `/apply`（源码模式必须拒绝自我替换）、`sqzy:` 协议指向本程序 |
-| functest_app.py | 桌面外壳端到端：真的开一个窗口，验单实例、托盘、置顶、退出 |
+| functest_app.py | 桌面外壳端到端：真的开一个窗口，验单实例、托盘、置顶、退出（**只能跑 Windows**，别的平台返回 3 = 没执行，不算通过） |
 | check_live.py | 发布**之后**跑：核验线上网页 / version.txt / exe、apk 下载链接与本地一致 |
 
 ```bash
@@ -203,8 +204,8 @@ Windows：第一次发通知时会注册 `sqzy:` 协议；若被安全软件拦�
 
 1. **提 issue**：说清问题或想要的功能（仓库菜单「Issues → 新建」）。
 2. **开分支**：`python gitee_repo.py branch new fix/xxx`
-3. **改代码 + 过闸门**：本地跑 `bash publish.sh` —— 页面语法 / 渲染冒烟 / 交互遍历 / 本地接口
-   四项自检全过才允许提交；桌面外壳改动另外跑 `python functest_app.py`。
+3. **改代码 + 过闸门**：本地跑 `python publish.py`（或 `bash publish.sh`）—— 作息逻辑断言 /
+   页面语法 / 渲染冒烟 / 交互遍历 / 本地接口五项全过才允许提交；桌面外壳改动另外跑 `python functest_app.py`。
 4. **提交 PR**：`python gitee_repo.py --branch=fix/xxx push <改动文件>` 把改动提上分支，
    再 `python gitee_repo.py pr new fix/xxx "<标题>" <说明.md>`（说明里写清改了什么、
    怎么验证的，并关联 issue 编号）。
