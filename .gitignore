@@ -13,3 +13,5 @@ __pycache__/
 .testdata*/
 .mirror_*/
 .gitprobe/
+backups/
+sqzy_updater.exe
