@@ -43,6 +43,22 @@ def get_once(url, timeout=60):
         return None
 
 
+def get_fresh(url, want_text, tries=6, wait=10):
+    """读线上文件，内容还没跟上的时候等一等再读。
+    码云 raw 有 CDN 缓存：刚合并完常见「还是上一版」，几十秒后才变成新的。
+    以前只在网络异常时重试，内容陈旧就直接判 FAIL —— 于是刚发完版就报红。
+    真的不对的文件等再久也不会变，所以这个等待不会掩盖问题。"""
+    body = None
+    for i in range(tries):
+        body = get_once(url)
+        if body is not None and body.decode('utf-8', 'replace').strip() == want_text.strip():
+            return body, True
+        if i < tries - 1:
+            print('    线上内容还没跟上（第 %d 次），%d 秒后再看' % (i + 1, wait))
+            time.sleep(wait)
+    return body, False
+
+
 def say(ok_flag, text):
     print('  %s %s' % ('✓' if ok_flag else '✗', text))
     if not ok_flag:
@@ -81,8 +97,9 @@ if src != '发行版附件':
     say(False, '发行版附件 index.html 拿不到 —— 发布时要把 release/index.html 也传成发行版附件（自动更新第一来源）')
 if src != 'raw':
     print('    · 码云 raw 取不到 index.html（大文件被 451 挡）；壳会自动走发行版附件 / contents API')
-live_ver = (get(RAW + 'version.txt') or b'').decode('utf-8').strip()
-say(live_ver == local_ver, '线上 version.txt 与本地一致：%s' % live_ver[:80])
+_ver_body, ok_ver = get_fresh(RAW + 'version.txt', local_ver)
+live_ver = (_ver_body or b'').decode('utf-8', 'replace').strip()
+say(ok_ver, '线上 version.txt 与本地一致：%s' % live_ver[:80])
 m = re.search(r'\{.*\}', live_ver, re.S)
 live_v = json.loads(m.group(0))['v'] if m else '?'
 say(live_v == app_v, '线上版本号 %s == 页面 APP_VERSION %s' % (live_v, app_v))
@@ -91,9 +108,10 @@ say(live_v == app_v, '线上版本号 %s == 页面 APP_VERSION %s' % (live_v, ap
 _readme = re.search(r'当前版本：\*\*(v[0-9.]+)\*\*', open('README.md', encoding='utf-8').read())
 say(bool(_readme) and _readme.group(1) == app_v,
     'README 当前版本 %s == 页面 APP_VERSION %s' % ((_readme.group(1) if _readme else '没写'), app_v))
-live_prog = (get(RAW + 'program.txt') or b'').decode('utf-8').strip()
 local_prog = open('release/program.txt', encoding='utf-8').read().strip()
-say(live_prog == local_prog, '线上 program.txt 与本地一致：%s' % live_prog[:80])
+_prog_body, ok_prog = get_fresh(RAW + 'program.txt', local_prog)
+live_prog = (_prog_body or b'').decode('utf-8', 'replace').strip()
+say(ok_prog, '线上 program.txt 与本地一致：%s' % live_prog[:80])
 mp = re.search(r'\{.*\}', live_prog, re.S)
 if mp:
     prog = json.loads(mp.group(0))
