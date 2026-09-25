@@ -81,13 +81,26 @@ def req(method, url, tok, payload=None, raw=None, ctype=None, timeout=120):
 
 
 def release_of(tok, tag):
-    st, items = req('GET', API + '/releases', tok)
-    if st != 200 or not isinstance(items, list):
-        print('  ✗ 取发行版列表失败 HTTP %s %s' % (st, str(items)[:160]))
-        sys.exit(1)
-    for it in items:
-        if it.get('tag_name') == tag:
-            return it
+    """按 tag 找发行版。
+    以前只翻 /releases 的第一页（默认 20 条）：仓库发到第 21 个版本之后，
+    release upload / edit / assets 就会报「找不到 tag=xxx 的发行版」——
+    实测踩过（v2.3.13 只能绕过去用 curl 直接打 API 传附件）。
+    现在先按 tag 直查，查不到再翻页兜底。"""
+    st, one = req('GET', API + '/releases/tags/' + urllib.parse.quote(tag), tok)
+    if st == 200 and isinstance(one, dict) and one.get('id'):
+        return one
+    page = 1
+    while page <= 10:
+        st, items = req('GET', API + '/releases?page=%d&per_page=100' % page, tok)
+        if st != 200 or not isinstance(items, list):
+            print('  ✗ 取发行版列表失败 HTTP %s %s' % (st, str(items)[:160]))
+            sys.exit(1)
+        for it in items:
+            if it.get('tag_name') == tag:
+                return it
+        if len(items) < 100:
+            break
+        page += 1
     return None
 
 
