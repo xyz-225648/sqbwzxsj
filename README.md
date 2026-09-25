@@ -1,352 +1,132 @@
 # 宿迁职业技术学院作息时间表
 
-四个学院（信息设计 / 信息基础 / 通识教育 / 女子教育）的一日作息时间轴，**Windows 桌面版 / 安卓手机版 / 浏览器网页版** 三端通用。
+四个学院（信息设计 / 信息基础 / 通识教育 / 女子教育）的一日作息时间轴，支持 **Windows 桌面版 / 安卓手机版 / 浏览器网页版** 三端通用。
 
 当前版本：**v2.4.1**
 
-## 目录
+## 简介
 
-- [下载使用](#下载使用)
-- [功能](#功能)
-- [设置](#设置)
-- [自动更新](#自动更新)
-- [版本号规范](#版本号规范)
-- [开发 & 编译打包](#开发--编译打包)
-- [仓库文件说明](#仓库文件说明)
-- [自检脚本](#自检脚本)
-- [常见问题](#常见问题)
-- [关于「无法识别的应用」提示 / 杀软报警](#关于无法识别的应用提示--杀软报警)
-- [开发流程（issue → 分支 → Pull Request → 合并）](#开发流程issue--分支--pull-request--合并)
-- [本地接口与安全](#本地接口与安全)
-- [发布规则](#发布规则)
-- [GitHub 镜像](#github-镜像)
-- [许可](#许可)
+本项目提供宿迁职业技术学院各学院的每日作息时间表，支持横竖版自动切换、当前时段高亮显示、上下课倒计时、学院状态预览等功能。桌面版和手机版支持离线使用、自动更新、系统通知、窗口置底/置顶等特性。
+
+## 功能特点
+
+### 通用功能
+- 全天时间轴，横版/竖版自动切换
+- 当前时段高亮 + 上下课倒计时
+- 鼠标悬停预览任意时刻，点一下钉住查看详情
+- 完全离线可用（零外部依赖）
+
+### Windows 桌面版
+- 窗口置顶功能
+- 关闭到托盘，后台运行
+- 开机自启动（托盘模式）
+- 单实例运行
+- Windows 系统通知
+- 一键更新功能
+
+### 安卓手机版
+- 系统通知支持
+- 打开后自动检查更新
+- APK 分享功能
+- 后台常驻服务
+- 开机自启动
+- 主流国产系统适配
 
 ## 下载使用
 
-到 [发行版页面](https://gitee.com/xyz-225648/sqbwzxsj/releases) 下载（链接永远指向最新版）：
-
 | 平台 | 文件 | 说明 |
-|---|---|---|
-| **Windows** | 宿迁职业技术学院作息时间表.exe | 双击即用，免安装（需 WebView2，Win11 自带） |
-| **安卓手机** | 宿迁职业技术学院作息时间表.apk | 允许「安装未知来源应用」后安装 |
-| **浏览器** | index.html（仓库根目录） | 任意浏览器直接打开；仓库 raw 的大文件被码云挡（451），想直接在线看用 jsDelivr：[cdn.jsdelivr.net/gh/xyz-225648/sqbwzxsj@master/index.html](https://cdn.jsdelivr.net/gh/xyz-225648/sqbwzxsj@master/index.html) |
+|------|------|------|
+| Windows | 宿迁职业技术学院作息时间表.exe | 双击即用，需 WebView2（Win11 自带） |
+| 安卓 | 宿迁职业技术学院作息时间表.apk | 允许安装未知来源应用后安装 |
+| 网页 | index.html | 任意浏览器直接打开 |
 
-> 手机用户优先用页面里的「**一键下载安装包**」：应用内走系统下载器、浏览器走带 CORS 的镜像，
-> 两条路都会存成真正的 `.apk`。只有在 gitee 发行版页面**直接点附件**时才会下到 `.apk.zip`
-> （原因和绕法见 [常见问题](#常见问题)）。
-
-> 仓库里放源码、网页、自检脚本，外加**每个版本一份 apk 副本**（`apk/sqzy-timetable-<tag>.apk`，约 120 KB）——
-> 它既是「浏览器也能下到 `.apk`」的镜像源（见下面常见问题），也是别人 clone 后能直接拿到安装包的备份。
-> 体积大的 exe（十几 MB）仍然只放在发行版附件里。
-
-## 功能
-
-- 全天时间轴，**横版 / 竖版**自动切换（窗口变窄自动立起来，手机自动用竖版）
-- **当前时段高亮** + 「还有几分钟下课 / 还有几分钟上课」倒计时
-- 鼠标悬停预览任意时刻，**点一下钉住**，四学院当时的状态一览
-- 点学院名跳到下方对应卡片；桌面版有**回到顶部**按钮和 Ctrl + 滚轮缩放（会被记住）
-- **完全离线可用**（页面零外部依赖，校徽图标是内嵌的）
-
-### 桌面版（Windows）额外功能
-
-- **窗口置顶**：页头按钮或 Ctrl + T，设置面板里也能开关
-- **关闭到托盘**：点 ✕ 只隐藏，课表提醒照常在后台跑；双击托盘图标恢复
-- **开机自启动**：登录 Windows 后自动在**托盘**运行（不弹窗口），设置面板里随时开关
-- **单实例**：重复双击 exe 不会开出第二个窗口，只会把原来那个（哪怕藏在托盘里）叫到前台
-- **Windows 系统通知**：带校徽图标，可在「设置 → 系统 → 通知」里管理；**点通知直接回到课表**
-  （通知走 `sqzy:` 协议，程序没开就打开，已经开着——包括藏在托盘里——就把窗口叫到前台）
-- **一键更新**：关于页发现 exe 有新版时，点「一键更新」由程序自己下载、校验 sha256，
-  退出后替换自身并重启（下载校验不过就拒绝替换，绝不会换上半截包）
-
-### 手机版（安卓）额外功能
-
-- 走**安卓系统通知**（首次启动会申请通知权限）
-- 打开后 1~2 秒自动刷新成仓库里的最新课表
-- 手机版不显示「置顶 / 切换横竖版」这类只对桌面有意义的按钮
-- **装包不会被改名**：gitee 附件 CDN 对 `.apk` 固定返回 `application/zip`（实测改不了），
-  手机浏览器会按 MIME 把它存成 `.apk.zip`。所以 apk 另外以**仓库文件**提交一份
-  （`apk/sqzy-timetable-<tag>.apk`），页面在浏览器里走 jsdelivr / ghproxy 这些带 CORS 的代理
-  `fetch` 成 blob 后自己指定文件名保存；应用内则走系统 DownloadManager —— 两条路都存成 `.apk`。
-  镜像线路全不通时才回退 gitee 附件，并提示把后缀改回来。
-- **分享安装包**：设置里可以把本机这份 apk 直接发给同学（微信 / QQ / 蓝牙）
-- **后台常驻**：设置里的开关会起一个前台服务（状态栏留一条通知，`IMPORTANCE_MIN`），
-  系统就不会把提醒一起冻结；还能一键申请「忽略电池优化」、跳到应用设置
-- **开机自启**：`BootReceiver` 收到开机广播后把常驻服务拉起来
-- 国产系统（小米 / 华为·荣耀 / OPPO·一加 / vivo）默认会清理后台，设置面板里按机型写清了
-  自启动放行路径 —— 只关电池优化还不够
+推荐使用应用内的「一键下载安装包」功能，可绕过 gitee 附件的 MIME 类型问题。
 
 ## 设置
 
-设置面板里的开关**改动即时生效并自动保存**，关掉窗口下次打开还在：
-按学院分别开关通知、下课前提醒（可调提前几分钟）、上课前 / 开始上课 / 下课时提醒，
-还能发一条测试通知验证通道是否正常。
+设置面板支持：
+- 按学院分别开关通知
+- 下课/上课前提醒（可调提前时间）
+- 测试通知功能
+- 自动更新配置
+- 窗口行为设置（桌面版）
+- 后台常驻开关（安卓版）
 
 ## 自动更新
 
-软件启动时先秒开本地版本，再后台去码云问一句「有没有新版本」，有就静默替换新页面。
+软件采用双版本机制：
+- **页面版本**：网页本体和课表数据，发布时自动热更新
+- **程序版本**：exe/apk 安装包，需要重装
 
-仓库里还有一份 `program.txt`：它记录当前发布的 **exe / apk 版本**，以及两个发行包的**直链、sha256、字节数**
-（由 `make_program_txt.py` 从 `app.py` 的 `SHELL_VERSION` 与安卓 `versionName` 读出程序本体版本，再算本地发行包）。
-网页能自动热更新、程序本体不能，所以页面会拿它比一次 —— 发现自己落后就在「设置 → 关于」提示「程序本体有新版」：
+发布后会自动检查更新，Windows 版支持一键更新（下载+校验+自动替换），安卓版走系统下载器。
 
-- Windows：给出「**一键更新**」，页面把直链和 sha256 交给 exe 的本地接口
-  `/download`（下载 + 校验）→ `/apply`（写一个替换脚本，等本进程退出后 `move` 覆盖自身并重启）。
-  PyInstaller onefile 运行中不能覆盖自己，所以必须绕过一层；校验不过就停在原地不乱换。
-- 安卓：走 DownloadManager 后台下载，下完点通知安装，覆盖安装不会丢数据。
-
-**改课表只需要动 index.html 和 version.txt**，所有人下次打开就是最新的，不用重装。
-**热更新与程序本体更新分开算**：纯页面 / 数据变更只升页面版本（`APP_VERSION` → `version.txt`），
-`program.txt` 原样不动，用户只会热更新、不会收到「程序本体有新版」；只有换了 exe / apk
-（重打安装包）才升 `SHELL_VERSION` / 安卓 `versionName`，那时才需要新建发行版替换附件。
-
-> **页面本体按三个来源依次取**（2026-09-25 起，桌面版与安卓版同一套顺序）：
-> ① 发行版附件 `releases/download/<版本号>/index.html` → ② 码云 contents API（base64）→ ③ 仓库 raw。
-> 为什么会这样：码云 raw 对**大文件**返回 `451 The content may contain violation information`
-> （实测同一个仓库里 ≤24 KB 正常、≥39 KB 全被挡，跟内容无关），而页面有 148 KB ——
-> 只走 raw 的话「网页热更新」就静默失效了，用户只会一直看到安装包里内置的旧页面。
-> 所以**每次发布都要把 `release/index.html` 也传成发行版附件**（`check_live.py` 会机械校验，缺了直接判 FAIL）。
-
-详见 [自动更新使用说明.md](自动更新使用说明.md)。
-
-## 版本号规范
-
-两个版本号**分开算、各管各的**：
-
-| 版本号 | 管什么 | 什么时候升 | 写在哪里 |
-|---|---|---|---|
-| **页面版本**（热更新） | 网页本体 / 课表数据 | 改 `index.html`（或 `calendar.txt`）就升 | 页面 `APP_VERSION`；发布时自动写进 `version.txt` |
-| **程序本体版本**（重下安装包） | exe / apk 的壳 | **只有重打安装包才升** | `app.py` 的 `SHELL_VERSION`（exe）；`.apkbuild/app/AndroidManifest.xml` 的 `versionName` / `versionCode`（apk） |
-
-- 纯页面 / 数据变更：只升**页面版本**，`program.txt` 原样不动 → 用户只会热更新，**不会**被提示重下安装包。
-- 壳代码变更：升 `SHELL_VERSION` 和 `versionName` / `versionCode`，重打 exe / apk，
-  `make_program_txt.py` 会把新的程序本体版本、直链、sha256 写进 `program.txt` → 用户才会看到「程序本体有新版」。
-- 两者可以相同，也可以不同（页面比壳新、壳比页面新都允许）；段位含义不变：
-
-    V主.次.补丁
-
-| 段位 | 什么时候加 | 例子 |
-|---|---|---|
-| **主版本** | 架构改动、重大功能新增或重构 | V1 → V2 |
-| **次版本** | 新增普通功能、界面优化 | V2.0 → V2.1 |
-| **补丁号** | Bug 修复、微小调整（不新增功能） | V2.0.0 → V2.0.1 |
-
-发布脚本直接从页面里读版本号写进 `version.txt`，不会对不上。
-
-## 开发 & 编译打包
+## 开发与编译
 
 ```bash
-# 1) 页面：本地直接打开开发源文件（中文名那份），或起本地静态服务
+# 本地开发（页面）
 python -m http.server 8123
 
-# 2) 发布闸门（生成 release/{index.html,version.txt,program.txt}，任何一项不过就中止）
-python publish.py          # Windows 上没 bash 也能跑；bash publish.sh 只是转发
+# 发布（生成 release/ 目录）
+python publish.py
 
-# 3) Windows EXE（PyInstaller onefile；产物是 dist/sqzy_schedule.exe）
+# Windows EXE 打包
 python -m PyInstaller --noconfirm --clean --onefile --windowed \
   --name sqzy_schedule --icon app.ico \
   --add-data "宿迁职业技术学院作息时间表.html;." \
   --hidden-import webview.platforms.edgechromium app.py
 
-# 4) 安卓 APK（产物覆盖仓库根目录的 宿迁职业技术学院作息时间表.apk）
+# 安卓 APK 打包
 python .apkbuild/build_apk.py
 
-# 5) 按版本号备份本次构建产物（exe/apk → backups/，防止后续版本覆盖丢失）
+# 备份构建产物
 python backup_build.py
 ```
 
-依赖：Windows 上需要 Python 3 + `pywebview` + `PyInstaller`；安卓打包需要 JDK（`.apkbuild/tools/jdk` 已内置）与 Android SDK build-tools（`.apkbuild/tools/sdk` 已内置）。
+依赖：Python 3 + pywebview + PyInstaller（Windows）；JDK + Android SDK（安卓）。
 
-## 仓库文件说明
+## 版本规范
 
-| 文件 | 用途 |
-|---|---|
-| index.html | 网页主体，也是自动更新的内容源（本地开发时页面源码叫「宿迁职业技术学院作息时间表.html」，publish.sh 会把它复制成 index.html；仓库里只保留一份，避免重复） |
-| version.txt | 版本标记，内容变了才触发更新 |
-| app.py | Windows 桌面版源码（pywebview + WebView2） |
-| publish.py | 一键发布：先过全部自检（逻辑断言 / 语法 / 渲染冒烟 / 交互遍历 / 接口），再生成 release/ 里的三个文件（`publish.sh` 只是转发到它，Windows 上没有 bash 也能发） |
-| make_program_txt.py | 生成 program.txt：程序本体版本（读 app.py 的 `SHELL_VERSION` 与安卓 `versionName`，与页面版本分开算）、直链、sha256、字节数，以及 apk 的仓库镜像路径 / 代理 CDN 线路 |
-| apk/sqzy-timetable-<tag>.apk | 每个版本提交一份 apk 副本：给「浏览器也要存成 .apk」用的镜像源（约 120 KB/版） |
-| set-update-url.sh | 给二次开发者用：改自动更新地址并重新打包 |
-| check_live.py | 发布之后核验线上：网页、版本号、两个下载链接跟本地是否一致 |
-| gitee_repo.py | 维护者工具：仓库文件 / 分支 / Pull Request / Issue / 发行版，一条命令管一种动作（令牌读本机 .gitee_token，不会进仓库） |
-| gh_release.py | 维护者工具：在 GitHub 镜像仓库建/更新同名发行版并上传附件（附件名用 ASCII，GitHub 会把中文名削成 default.exe） |
-| gh_secret.py | 维护者工具：往 GitHub 仓库写 Actions secret（自己实现的 sealed box，不依赖 PyNaCl），用于镜像同步的 GITEE_TOKEN |
-| mirror_sync.py | 在 GitHub Actions 里跑的镜像同步：谁领先推给谁，两边都有新提交就自动合并，合不干净就停下不动 |
-| github_mirror.py | 本机的备用镜像（直接从 Gitee 拉全量再推 GitHub）；本机到 github.com 不通时用它没戏，平时由 Actions 负责 |
-| 自动更新使用说明.md | 自动更新的原理和日常操作 |
-| CHANGELOG.md | 每个版本改了什么 |
+| 版本号类型 | 管理内容 | 何时升级 |
+|-----------|----------|----------|
+| 页面版本 | 网页/课表数据 | 修改 index.html 后 |
+| 程序版本 | exe/apk 壳 | 重打包安装包后 |
 
-## 自检脚本
+版本号格式：V主.次.补丁
 
-发布前 `python publish.py`（`bash publish.sh` 只是它的转发）会依次强制跑一遍，任何一项不过就中止发布：
+## 自检测试
 
-| 脚本 | 作用 |
-|---|---|
-| verify_schedule.js | 作息逻辑断言 30 条（周六/周日/放假/优先级；需要 node） |
-| check_page.py | 页面内联脚本语法检查（node --check） |
-| smoke_page.py | 无头浏览器渲染冒烟：三档视口 + 安卓 UA，抓未捕获异常和「功能没渲染出来」；另有三个**定时刻**断言（注入假时钟 + 作息模板覆盖）：周三 10:00 要报「下课」倒计时、周六 17:30 要报「还有 1 小时 30 分钟关寝」、周日 09:00 一条都不该有 —— 跟「今天是周几 / 是不是节假日」脱钩 |
-| functest_page.py | 无头浏览器 + CDP **交互遍历**（当前 **86 项**）：悬停/钉住、设置保存、通知判定、更新弹窗、缩放、防调试，以及安装包下载路径（镜像线路齐全、浏览器路径文件名必须以 `.apk` 结尾、blob 真拿到字节、有原生桥时交给系统下载器并按目标版本命名、返回键先关弹窗） |
-| selftest_api.py | 桌面版本地接口自检：/ping /state /notify /latest /quit，外加一键更新的 `/download`（无令牌 403、非 gitee 地址被拒）与 `/apply`（源码模式必须拒绝自我替换）、`sqzy:` 协议指向本程序 |
-| functest_app.py | 桌面外壳端到端：真的开一个窗口，验单实例、托盘、置顶、退出（**只能跑 Windows**，别的平台返回 3 = 没执行，不算通过） |
-| check_live.py | 发布**之后**跑：核验线上网页 / version.txt / exe、apk 下载链接与本地一致 |
-
-```bash
-python functest_app.py                        # 测源码
-python functest_app.py --exe 宿迁职业技术学院作息时间表.exe   # 测打包好的 exe
-```
+发布前必须通过以下测试：
+- verify_schedule.js - 作息逻辑断言（30条）
+- check_page.py - 页面脚本语法检查
+- smoke_page.py - 渲染冒烟测试
+- functest_page.py - 交互遍历测试（86项）
+- selftest_api.py - 本地接口测试
+- functest_app.py - 桌面外壳端到端测试
 
 ## 常见问题
 
-**手机从 gitee 下的安装包变成了 `.apk.zip`？**
+**手机下载的 APK 变成 .apk.zip？**
+> 页面内的下载按钮已绕过此问题，使用 jsdelivr 等代理确保文件名正确。
 
-gitee 附件的 CDN 对 `.apk` 固定返回 `Content-Type: application/zip`（实测：同一发行版的 `.exe` 却是
-`application/vnd.microsoft.portable-executable`；上传时指定 Content-Type 也没用），手机浏览器会按 MIME
-补后缀。**页面里的下载按钮已经绕开了它**：浏览器里走 jsdelivr / ghproxy 这些带 CORS 的代理，页面拿到字节后
-自己命名保存，所以一定是 `.apk`；应用内则走系统下载器（显式文件名）。只有直接在 gitee 发行版页面点附件时
-才会碰上，把结尾的 `.zip` 去掉就能装 —— 文件本身是完整的。
+**检查更新一直失败？**
+> 网页版走 GitHub 镜像，有6小时同步延迟；应用内下载直连码云，不受影响。
 
-**「检查更新」总说失败 / 一直没提示有新版本？**
+**设置会丢失吗？**
+> 不会，设置同时保存在页面本地存储和程序配置文件中。
 
-三端读版本的方式不同：桌面版问 exe 的本地接口；安卓版走原生桥直接读 gitee（不受 MIME / 跨域影响）；
-**网页版走 GitHub 镜像**（`raw.githubusercontent.com` 带 CORS 头）。镜像每 6 小时同步一次，
-所以刚发布的版本，网页版最多滞后 6 小时才发现。
+## 安全说明
 
-**点了通知没反应？**
+- 所有修改类接口需携带令牌（启动时随机生成）
+- 只读接口保持开放
+- 不返回 CORS 头，跨站请求一律拒绝
+- 下载接口只接受 gitee.com 且校验 sha256
 
-Windows：第一次发通知时会注册 `sqzy:` 协议；若被安全软件拦过或 exe 换了位置，去「设置 → 关于 →
-检查更新」触发一次即可重新注册。安卓：确认「设置 → 通知 → 本应用」没被关掉；国产系统还要在
-「自启动 / 后台白名单」里放行，否则息屏后提醒会被一起冻结（设置面板里有对应机型路径）。
+## 许可证
 
-**设置会不会因为重启而丢？**
+MIT License
 
-不会。设置同时写在页面本地存储和 exe 的 `settings.json`（`/config` 接口）里，启动时以壳里的那份为准，
-所以快速重启、换端口都不会回到默认值。
-
-**校园网 / 内网下更新和下载会不会不通？**
-
-应用内下载走系统下载器**直连码云**，不受影响；受影响的只有**浏览器**路径 —— 网页版读版本走 GitHub 镜像
-（`raw.githubusercontent.com` 带 CORS 头），apk 下载走 6 条线路依次降级：`@<tag>`×3 → `@master`×2 → ghproxy，
-每条都核对 `program.txt` 里的 sha256，全不通才回退到码云附件（并提示把 `.zip` 后缀改回 `.apk`）。
-校园网下最稳的做法就是在**应用内点「一键下载安装包」**；另外镜像每 6 小时同步一次，刚发布的版本网页版最多滞后 6 小时。
-
-**为什么仓库里要放一份 apk 副本？**
-
-为了让浏览器也能下到真正的 `.apk`（见上面第一条），约 120 KB/版；exe 仍然只在发行版附件里。
-
-## 关于「无法识别的应用」提示 / 杀软报警
-
-**先说结论**：Windows 弹的这层「Microsoft Defender SmartScreen 阻止了无法识别的应用启动……发布者：发布者未知」
-**不是病毒检出，是信誉判断** —— 程序没有代码签名证书、微软那边也没积累下载信誉，所以每次运行都拦一下。
-真的检出病毒是另一套界面：会写清威胁名（如 `Trojan:Win32/…`），给的是「删除 / 隔离」，
-并且 Defender 的「保护历史记录」里能查到记录。
-
-**用户这边怎么过**：弹窗上点「更多信息 → 仍要运行」；或先右键下载的文件 → 属性 → 勾「解除锁定」→ 确定再运行
-（浏览器下载的文件带 Zone 标记，SmartScreen 主要看它）。
-
-**我们这边做了 / 能做的**：
-
-| 手段 | 效果 | 状态 |
-|---|---|---|
-| 版本信息资源（公司 / 产品 / 版本，从页面 `APP_VERSION` 自动生成） | 属性页不再一片空白，对信誉判断是正向输入 | **已做**（在 `sqzy_schedule.spec` 里生成，版本号跟着页面走） |
-| 关掉 UPX 压缩壳 | 压缩壳是杀软误报重灾区，尤其 PyInstaller onefile | **已做**（本机本来也没装 UPX，等于把隐患提前关掉） |
-| 公布每个安装包的 sha256（`program.txt`） | 任何人可自行校验拿到的就是发布的那份 | **已做** |
-| **代码签名证书（OV / EV）** | **唯一能消掉这层弹窗的办法**：「发布者」那一栏会显示证书主体 | 待定：需要证书主体 + 硬件令牌 / 云 HSM，年费量级约 ¥1k–6k，具体问 CA（沃通 / 天威诚信 / 数安时代 / 亚洲诚信等） |
-| 微软商店 / MSIX 分发 | 由商店签名，用户侧不再看 SmartScreen | 可选：需开发者账号 + 上架审核 |
-| 向微软提交「未知应用 / 误报」复核 | 有时能解除当前这一版 | 每出新版本都要重来，不保证 |
-| 国内杀软白名单报备（360 / 腾讯 / 火绒） | 减少国产杀软拦截 | 需按各厂商流程逐版本提交 |
-
-签名接入本身很简单：证书到手后用
-`signtool sign /sha1 <证书指纹> /fd sha256 /tr <时间戳服务器> /td sha256 <exe>` 即可
-（证书在令牌 / 云 HSM 里时不需要导出私钥），再把这一步接进发布流程就行。
-
-## 开发流程（issue → 分支 → Pull Request → 合并）
-
-改这个仓库的代码一律走 Pull Request，不直接推 master，改动可追溯、可回滚：
-
-1. **提 issue**：说清问题或想要的功能（仓库菜单「Issues → 新建」）。
-2. **开分支**：`python gitee_repo.py branch new fix/xxx`
-3. **改代码 + 过闸门**：本地跑 `python publish.py`（或 `bash publish.sh`）—— 作息逻辑断言 /
-   页面语法 / 渲染冒烟 / 交互遍历 / 本地接口五项全过才允许提交；桌面外壳改动另外跑 `python functest_app.py`。
-4. **提交 PR**：`python gitee_repo.py --branch=fix/xxx push <改动文件>` 把改动提上分支，
-   再 `python gitee_repo.py pr new fix/xxx "<标题>" <说明.md>`（说明里写清改了什么、
-   怎么验证的，并关联 issue 编号）。
-5. **过门槛 + 合并**：本仓库开了「合并前必须通过审查 / 测试」，所以顺序是
-   `python gitee_repo.py pr approve <编号>`（一次点掉「审查通过」「测试通过」）→
-   `python gitee_repo.py pr merge <编号>`。合并后在 PR 页面能看到 diff、审查与测试记录。
-6. **回 issue**：`python gitee_repo.py issue comment <编号> "<版本 + 结论>"`，
-   然后 `python gitee_repo.py issue close <编号>`。
-
-### 发布也走 PR
-
-**发布**就是一次普通的改动，同样走上面的流程，不要图快直接推 master（已经犯过一次：v2.1.1 的改动绕过 PR 直推了 master）：
-
-- `index.html`（网页主体）、`version.txt`、`program.txt` 连同代码一起放进同一个 PR；
-  合并进 master 的那一刻，所有人的自动更新就会拿到新版本
-- 打 tag、发发行版、上传 exe / apk 附件是 **PR 之外** 的步骤（附件是二进制，没法评审）
-- 工具层已经堵死直推：`gitee_repo.py push` 不带 `--branch=` 会被拒绝，
-  只有线上出故障要立刻回滚这种急事才用 `--direct` 绕过
-
-### PR 说明写到哪
-
-仓库里有 `.gitee/PULL_REQUEST_TEMPLATE.md`：改了什么 / 为什么（关联 issue）/ 怎么验证（跑过哪些闸门、结果如何）
-—— 三项都要如实填，不跑闸门的 PR 不合并。
-
-
-## 本地接口与安全
-
-桌面版会在 `127.0.0.1` 上起一个小接口（端口优先 51900–51904），网页靠它发系统通知、改窗口状态。
-**浏览器里打开的任意网页都能向本机端口发请求**（CORS 只拦读响应、不拦发请求），所以：
-
-- 壳每次启动随机生成一个令牌，只注入给本程序自己发出的页面（`window.SQZY_TOKEN`）
-- 会改东西的接口（`/notify`、`/state` 的写操作、`/open`、`/quit`、`/config`、
-  `/download`、`/apply`）必须带令牌，否则返回 403 并记进 `api.log`。
-  `/download` 只接受 `https://gitee.com/` 开头的地址，并且校验 sha256；
-  `/apply` 只在打包成 exe 后可用（源码模式直接拒绝）
-- 只读接口（页面本体、`/ping`、`/version`、`/latest`）保持开放，方便排查
-- 令牌每次启动都换，不落盘、不外传
-- 不返回 `Access-Control-Allow-Origin`（页面与接口同源，不需要它），带 `Origin` 的跨站请求一律 403
-- 助手端口用 `SO_REUSEADDR` 绑定：退出后立刻重开还是同一个端口，localStorage 的 origin 不会变
-
-## 发布规则
-
-- **每个 tag 只放它自己那一版的安装包**，不回填旧 tag —— 否则「v1.0 里下到 v2.1.1」这种 tag 与二进制不一致
-- 老页面靠页面内的「程序本体有新版」提示（见 `program.txt`）引导到最新发行版
-- **发布顺序**：合并页面 PR → **立刻**建同名 tag / 发行版 → 上传附件。
-  这样 tag 里的源码与附件是同一版，下载链接也不会指向还不存在的 tag（两个窗口期都踩过）
-- **发版后必须同步更新 README**：顶部「当前版本」要立刻改成新号，这一条已经进闸门 ——
-  `check_live.py` 会读本地 README 的版本行，和页面 `APP_VERSION` 对不上就判 FAIL（漏更新会被挡住，不靠记性）
-- 发布也走 PR：见下面「开发流程 → 发布也走 PR」
 ## GitHub 镜像
 
-同一份仓库在 GitHub 上也有一份：https://github.com/xyz-225648/sqbwzxsj
+项目同时托管在 GitHub：https://github.com/xyz-225648/sqbwzxsj
 
-两边**双向同步**，谁领先就推给谁，规则写死在 `.github/workflows/mirror-sync.yml` 里：
-
-| 情况 | 动作 |
-|---|---|
-| 两边相同 | 什么都不做（只对齐 tag） |
-| GitHub 领先（在 GitHub 合并了 PR） | 推给 Gitee |
-| Gitee 领先（在 Gitee 合并了 PR） | 推给 GitHub |
-| 两边各有新提交 | 先自动合并；**合不干净就报错停下，谁都不动** |
-
-- 触发时机：每 6 小时一次 / GitHub 上 push 到 master（合并 PR 后立刻）/ 也可以在工作流页面手动点
-- 往 Gitee 推需要 GitHub 仓库里的 Actions secret `GITEE_TOKEN`（Gitee 私人令牌，勾 projects 权限）；没配的话只有 Gitee → GitHub 单向可用，反向那步会明确报错而不是假装成功
-- 主仓库仍然是 Gitee：产品改动按上面的「开发流程」在 Gitee 走 PR；在 GitHub 上开发也可以，合并后会由这个工作流推回 Gitee
-- ⚠️ **别在 Gitee 侧改 `.github/workflows/mirror-sync.yml`**：Actions 自带的 `GITHUB_TOKEN` 没有 `workflow` 权限，
-  只要 Gitee 的历史里存在改动这个文件的提交，镜像 push 就会被 GitHub 拒掉
-  （`refusing to allow a GitHub App to create or update workflow ... without workflows permission`），
-  双向同步直接停摆 —— v2.2.0 发布时就踩了这一次（想把同步频率从 6 小时改成 30 分钟），
-  最后只能把该文件恢复成与 GitHub 完全一致才恢复同步。真要改这个文件，得两边用**带 `workflow` 权限**的令牌分别推。
-### 在 GitHub 上开发
-
-1. 照常在 GitHub 上开分支、提 PR（讨论、评审都留在 GitHub）
-2. 合并进 master 后，同步工作流会自动跑一次，把这次改动推回 Gitee
-3. 如果同一时间 Gitee 那边也有新提交，工作流会先把两边的提交合并起来；
-   **合不干净就直接报错停下**，两边都不会被覆盖，等人工处理
-
-> 两边都可以当开发入口，主仓库是 Gitee（自动更新、发行版、issue 都在那边）。
-
-## 许可
-
-MIT，见 [LICENSE](LICENSE)。
+两边仓库双向同步，谁领先推给谁。
