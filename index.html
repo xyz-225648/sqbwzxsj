@@ -751,7 +751,7 @@ function renderGantt(){
   h += '</div><div class="g-close"></div></div>';
 
   TRACKS.forEach(function(t){
-    h += '<div class="g-row g-lane"><div class="g-name">' + t.name + '</div><div class="g-area">';
+    h += '<div class="g-row g-lane"><div class="g-name" title="查看「' + t.name + '」的详细时间轴">' + t.name + '</div><div class="g-area">';
     for (var hr = 8; hr <= 22; hr++){
       h += '<i class="grid major" style="left:' + pct(hr*60) + '%"></i>';
       if (hr < 22) h += '<i class="grid" style="left:' + pct(hr*60+30) + '%"></i>';
@@ -1113,8 +1113,17 @@ function bindVertical(){
   document.addEventListener('keydown', function(e){
     if (e.key === 'Escape' && vtPinned) vtUnpin();
   });
-  [].slice.call(vtHeads.querySelectorAll('.vt-head-cell')).forEach(function(h, i){
-    h.addEventListener('click', function(e){ e.stopPropagation(); jumpToTrack(i); });
+  /* 表头点击同样要委托：renderVertical() 会 vtHeads.innerHTML='' 重建格子
+     （校历加载完的 applyCalendar、跨天重绘），逐元素绑的监听会跟旧节点一起消失，
+     表现是手机版点学院名没反应。stopPropagation 仍拦住 wrap 的钉住逻辑。 */
+  if (vtHeads) vtHeads.addEventListener('click', function(e){
+    var h = (e.target && e.target.closest) ? e.target.closest('.vt-head-cell') : null;
+    if (!h) return;
+    var cells = [].slice.call(vtHeads.querySelectorAll('.vt-head-cell'));
+    var i = cells.indexOf(h);
+    if (i < 0) return;
+    e.stopPropagation();
+    jumpToTrack(i);
   });
 }
 
@@ -1154,12 +1163,19 @@ function jumpToTrack(i){
   card.__flashT = setTimeout(function(){ card.classList.remove('flash'); }, 2600);
 }
 function bindNameJump(){
-  [].slice.call(gGrid.querySelectorAll('.g-lane .g-name')).forEach(function(n, i){
-    n.setAttribute('title', '查看「' + TRACKS[i].name + '」的详细时间轴');
-    n.addEventListener('click', function(e){
-      e.stopPropagation();
-      jumpToTrack(i);
-    });
+  /* 委托绑在 #gGrid 上，不逐元素绑：
+     renderGantt() 会 gGrid.innerHTML='' 重建所有子节点（校历加载完的 applyCalendar、
+     跨天重绘都会走到），逐元素绑的 click 监听会跟旧节点一起消失 ——
+     表现就是「刚打开点学院名能跳，校历一加载完就没反应了」。
+     title 也改成在 renderGantt 里写，重绘后新节点自带。 */
+  gGrid.addEventListener('click', function(e){
+    var n = (e.target && e.target.closest) ? e.target.closest('.g-lane .g-name') : null;
+    if (!n || !gGrid.contains(n)) return;
+    var lanes = [].slice.call(gGrid.querySelectorAll('.g-lane .g-name'));
+    var i = lanes.indexOf(n);
+    if (i < 0) return;
+    e.stopPropagation();
+    jumpToTrack(i);
   });
 }
 function bindGuide(){
@@ -1270,14 +1286,14 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.3.13';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.3.14';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 安卓/桌面安装包挂在哪个发行版 tag 下：跟着本版号走（每版一个 tag，每个 tag
    只放它自己那一版的安装包，不回填旧 tag——否则 tag 与二进制对不上，见 issue IKHTOU）。
    注意：这个 tag 必须在**页面发布之前**就已存在，否则窗口期内下载按钮指向不存在的 tag。
    发布顺序：合并页面 PR → 立刻建同名 tag/发行版 → 上传附件。 */
-var RELEASE_TAG = 'v2.3.13';
+var RELEASE_TAG = 'v2.3.14';
 var latestInfo = null;
 /* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
 var SHELL_SEEN_KEY = 'sqzy-seen-shell';

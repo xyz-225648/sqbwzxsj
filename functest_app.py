@@ -7,14 +7,24 @@
 
 用法: python functest_app.py [--exe 路径]
 测试会临时改写状态文件 win_state.json，跑完还原。
+
+平台：只能跑 Windows（ctypes.windll / wintypes / 注册表 / 窗口消息都是 Windows 专有）。
+      别的平台上明确跳过并返回 3（"没执行"），不能算通过 —— 闸门空转等于没把关。
 """
 import ctypes, io, json, os, re, subprocess, sys, time, urllib.request
-from ctypes import wintypes
 
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+
+# 必须在 from ctypes import wintypes 之前判断：Windows 之外连这个 import 都会抛
+if sys.platform != 'win32':
+    print('  · functest_app: 当前平台是 %s，桌面外壳闸门只能跑 Windows，跳过（返回码 3 = 没执行，不是通过）'
+          % sys.platform)
+    sys.exit(3)
+
+from ctypes import wintypes
 
 TITLE = '宿迁职业技术学院作息时间表'
 # 测试自己一个数据目录（放在工作区里）：既不碰用户真实的缓存，也不受系统目录权限影响

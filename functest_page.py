@@ -234,12 +234,29 @@ def run_all(cdp, url, vw, vh):
     n_cd = bools(cdp, 'document.querySelectorAll("#nowBar .cd").length')
     n_meta = bools(cdp, 'document.querySelectorAll("#cards .card-h .m").length')
     check('卡片状态文字 4 条', n_meta == 4, '实际 %s 条' % n_meta)
-    t = time.localtime()
-    in_band = 8 * 60 <= t.tm_hour * 60 + t.tm_min <= 21 * 60 + 35
-    if in_band:
-        check('上课时段倒计时已渲染', n_cd >= 4, '倒计时只有 %s 条' % n_cd)
-    else:
-        print('    · 当前 %02d:%02d 不在 08:00–21:35，跳过倒计时断言' % (t.tm_hour, t.tm_min))
+    # 倒计时该不该有：只看渲染出来的状态，不按「现在几点」硬判 ——
+    # 节假日/周末整天休息，本来就没有倒计时（以前按 08:00–21:35 判，节假日必误报）。
+    states = cdp.ev('''[].slice.call(document.querySelectorAll("#nowBar .nowitem")).map(function(it){
+        var s = it.querySelector("span"), cd = it.querySelector(".cd");
+        return {txt: s ? s.textContent : "", cd: cd ? cd.textContent : ""};})''') or []
+    bad = []
+    for it in states:
+        txt, cd = it.get('txt', ''), it.get('cd', '')
+        base = txt.split(' ')[0]
+        if base in ('未开课', '已关寝'):
+            if cd:
+                bad.append('%s 不该有倒计时' % txt)
+        elif base == '休息':
+            if cd and '关寝' not in cd:
+                bad.append('休息段的倒计时应为距关寝：%s' % cd)
+        elif base == '就寝准备':
+            if not cd:
+                bad.append('%s 缺距关寝倒计时' % txt)
+        elif re.search(r'\d{1,2}:\d{2}[\u2013\u2014-]\d{1,2}:\d{2}', txt):
+            if not cd:
+                bad.append('%s 在时段内却没有倒计时' % txt)
+    check('状态与倒计时自洽', not bad, '；'.join(bad[:3]))
+    print('    · 倒计时 %s 条 %s' % (n_cd, ('例: ' + (states[0].get('cd') or '无')) if states else ''))
 
     # ---------- 2. 横竖版切换 ----------
     cdp.ev('window.SQTC.applyDevice("mobile")')
@@ -307,21 +324,48 @@ def run_all(cdp, url, vw, vh):
           not bools(cdp, 'document.getElementById("guide").classList.contains("pinned")'), '仍然钉着')
 
     # ---------- 4. 点学院名跳转 ----------
+    # 先等校历回调：applyCalendar 会 renderGantt() 重建 #gGrid 的所有子节点。
+    # 以前监听是逐元素绑的，重建后点学院名就没反应了（v2.3.14 改成事件委托），
+    # 所以这条断言必须在校历回调之后点，否则测不出这个真 bug。
+    cal = ''
+    for _ in range(80):
+        cal = cdp.ev('(function(){var n=document.getElementById("calNote");return n?n.textContent:"";})()') or ''
+        if cal:
+            break
+        time.sleep(0.25)
+    print('    · 校历回调: %s' % (cal or '(没等到，按「没校历」继续)')[:52])
     cdp.ev('window.scrollTo(0,0)')
     time.sleep(0.2)
     cdp.ev('document.querySelectorAll("#gGrid .g-lane .g-name")[1].click()')
     time.sleep(0.5)
-    check('点学院名跳到对应卡片并高亮',
+    check('点学院名跳到对应卡片并高亮（校历重绘后仍有效）',
           bools(cdp, '!!document.querySelector("#cards .card.flash")'), '卡片没有 flash')
 
     # ---------- 5. 回到顶部 ----------
-    cdp.ev('window.scrollTo(0, 1200)')
+    # 页面中途可能自己弹一层（线上版本数据比本地页面新时的「发现新版本」），
+    # 它带滚动锁（html.sheet-lock body{position:fixed}），会让滚动测试假失败 —— 先关掉。
+    shut = cdp.ev('(function(){var n=[];document.querySelectorAll(".sheet.on").forEach(function(s){'
+                  'var x=s.querySelector(".sheet-x");if(x){x.click();n.push(s.id);}});return n;})()')
+    if shut:
+        print('    · 滚动前先关掉自动弹层 %r' % (shut,))
+        time.sleep(0.4)
+    # 滚到底，不写死 1200：页面高度跟布局/作息有关（桌面布局只有 ~1000 高、最多滚 200），
+    # 写死 1200 时 pageYOffset 会被夹到 200 多，而「回到顶部」的阈值是 300 —— 于是假失败。
+    cdp.ev('window.scrollTo(0, 99999)')
     time.sleep(0.6)
-    print('    · 滚动诊断 %r' % (cdp.ev('({y:window.pageYOffset,vh:window.innerHeight,'
-                                       'sh:document.documentElement.scrollHeight,'
-                                       'cls:document.documentElement.className})'),))
-    check('滚动后「回到顶部」按钮出现',
-          bools(cdp, 'document.getElementById("toTop").classList.contains("on")'), '按钮没亮')
+    diag = cdp.ev('({y:window.pageYOffset,vh:window.innerHeight,'
+                  'sh:document.documentElement.scrollHeight,'
+                  'cls:document.documentElement.className,'
+                  'sheets:document.querySelectorAll(".sheet.on").length,'
+                  'btn:document.getElementById("toTop").className})') or {}
+    print('    · 滚动诊断 %r' % (diag,))
+    lit = bools(cdp, 'document.getElementById("toTop").classList.contains("on")')
+    if (diag.get('y') or 0) > 300:
+        check('滚动超过 300px 后「回到顶部」按钮出现', lit is True, '按钮没亮')
+    else:
+        # 滚不到阈值时按钮就不该亮（阈值在页面 bindToTop 里写死 300）
+        check('页面只滚得动 %s px（不足 300）时按钮不亮' % diag.get('y'), lit is False,
+              '没到阈值按钮就亮了')
     cdp.ev('document.getElementById("toTop").click()')
     time.sleep(1.4)
     y = cdp.ev('window.pageYOffset')
@@ -542,9 +586,25 @@ def run_all(cdp, url, vw, vh):
           document.querySelectorAll(".sysToast").forEach(function(e){ e.remove(); });
         })()''' % (day, hh, mi))
 
+    # 先把假钟设到 2026-09-21（周一），再等页面按这个日期重新解析作息。
+    # 页面缓存的是"今天"的模板（_curDay），今天要是周末/节假日，不重解析就跟假的周一对不上：
+    # 下面探到的"下课前 N 分钟"会落在休息段，通知永远不触发 —— 闸门会在节假日/周末误报。
+    # 重解析有两条现成的路：20 秒的 setInterval，和 visibilitychange（同一条 rerenderSchedule）。
+    cdp.ev(arm_clock(0, 0))
+    flipped = False
+    for _ in range(40):
+        cdp.ev('document.dispatchEvent(new Event("visibilitychange"))')
+        time.sleep(0.3)
+        if cdp.ev('''(function(){var g = window.SQZY_SEGAT && window.SQZY_SEGAT(0, 600);
+                     return !!(g && ['gap','noon','eve','free'].indexOf(g.cat) < 0);})()'''):
+            flipped = True
+            break
+    print('    · 假钟重解析作息: %s（10:00 处 %s）'
+          % ('已切到周内模板' if flipped else '没切过去，下面的判定可能不准', '有正课' if flipped else '仍是休息'))
+
     probe = cdp.ev('''(function(){
       var seg = window.SQZY_SEGAT, cfg = window.SQZY_CFG;
-      var skip = ['gap','noon','eve'];
+      var skip = ['gap','noon','eve','free'];
       for (var m = 0; m < 1440; m++){
         var g = seg(0, m);
         if (g && skip.indexOf(g.cat) < 0 && g.e - m === cfg.min) return m;
@@ -622,8 +682,19 @@ def run_all(cdp, url, vw, vh):
     cdp.ev('window.applyUpdateInfo({v:"v9.9.9", t:"2026-01-01 00:00"}, true)')
     time.sleep(0.4)
     check('发现大版本更新时弹窗', bools(cdp, '!!document.getElementById("upDlg")'), '没有弹窗')
-    href = cdp.ev('(function(){var a=document.querySelector("#upDlg a");return a?a.href:"";})()')
-    check('弹窗里有安卓下载链接', bool(href) and 'releases/download/' in href, 'href=%r' % href)
+    # 直链放在 data-url 里、href 故意留 javascript:void 0（v2.3.2 起）：
+    # gitee 附件 CDN 对 apk 返回 application/zip，手机浏览器按 href 直链下就存成 .apk.zip，
+    # 所以点击改成走 JS（安卓交原生桥 getApkSmart / 桌面走一键更新）。
+    dl = cdp.ev('(function(){var a=document.querySelector("#upDlg a");'
+                'return a?{url:a.getAttribute("data-url")||"",href:a.href||"",'
+                'txt:a.textContent||"",wired:!!a.onclick}:null;})()') or {}
+    check('弹窗里的下载按钮指向发行版附件（.apk 直链）',
+          'releases/download/' in dl.get('url', '') and dl.get('url', '').endswith('.apk'),
+          'data-url=%r' % dl.get('url'))
+    check('桌面版不把直链放在 href（免得被存成 zip），点击交给 JS',
+          dl.get('href') == 'javascript:void 0' and dl.get('wired') is True
+          and ('发行版' in dl.get('txt', '') or dl.get('txt', '').startswith('一键更新')),
+          'href=%r 文字=%r' % (dl.get('href'), dl.get('txt')))
     cdp.ev('document.querySelector("#upDlg .sheet-x").click()')
     time.sleep(0.4)
     check('弹窗能关掉', not bools(cdp, '!!document.getElementById("upDlg")'), '弹窗还在')
@@ -726,6 +797,11 @@ def run_all(cdp, url, vw, vh):
         time.sleep(0.4)
         check('手机版 Esc 能取消钉住',
               not bools(cdp, 'document.getElementById("vtGuide").classList.contains("on")'), '还在钉着')
+        # 竖版表头点学院名：renderVertical() 重绘格子后也要还能跳（同 v2.3.14 的事件委托修复）
+        cdp.ev('document.querySelectorAll("#vtHeads .vt-head-cell")[0].click()')
+        time.sleep(0.5)
+        check('手机版点学院名也能跳到卡片并高亮',
+              bools(cdp, '!!document.querySelector("#cards .card.flash")'), '竖版表头没反应')
     cdp.send('Emulation.clearDeviceMetricsOverride')
 
 
