@@ -155,8 +155,30 @@ try:
 
         st, body = call('/latest')
         print('  /latest    HTTP %d  %s' % (st, body[:150]))
-        if '"v": "v' not in body:
-            rc = 1
+        try:
+            latest_ok = json.loads(body)
+        except Exception:
+            latest_ok = None
+        if latest_ok is None:
+            print('    ✗ /latest 返回的不是 JSON'); rc = 1
+        else:
+            # gitee raw 慢/不可达时，/latest 会按时间预算快速返回 {"ok": false}；
+            # 只有确认 gitee 可达时才强校验版本内容，避免网络抖动把发布闸门卡死。
+            _probe = None
+            try:
+                _req = urllib.request.Request(
+                    'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/version.txt?t=%d'
+                    % int(time.time()),
+                    headers={'User-Agent': 'selftest', 'Cache-Control': 'no-cache'})
+                with urllib.request.urlopen(_req, timeout=6) as _r:
+                    _probe = _r.read().decode('utf-8', 'replace')
+            except Exception:
+                _probe = None
+            if _probe and '"v": "v' in _probe:
+                if '"v": "v' not in body:
+                    print('    ✗ gitee 可达但 /latest 没带回版本号'); rc = 1
+            else:
+                print('    · gitee raw 当前不可达/太慢，跳过 /latest 版本内容核验（接口已返回 JSON）')
 
         # 通知可点击（issue IKHWKA #2）：发通知前要注册 sqzy: 协议，
         # 否则 Windows 点了通知不知道该拉起谁（点了没反应的根源）
