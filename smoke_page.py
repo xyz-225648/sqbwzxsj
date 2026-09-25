@@ -11,7 +11,7 @@
 
 用法: python smoke_page.py [本地页面路径 或 http(s) URL]
 """
-import datetime, os, re, shutil, subprocess, sys, tempfile
+import datetime, io, os, re, shutil, subprocess, sys, tempfile
 
 PAGE_NAMES = ('宿迁职业技术学院作息时间表.html', 'index.html')
 
@@ -86,12 +86,58 @@ ANDROID_UA = ('Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTM
               'Chrome/120.0.0.0 Mobile Safari/537.36')
 
 
-def render(w, h, android=False):
+# 定时刻渲染：把「现在」钉死，倒计时断言才不受当天是周几 / 节假日影响。
+# 页面读时间的入口只有 Date 和 localStorage['sqzy-today']（见页面里的 resolveSchedule），
+# 所以拷一份页面、在 <head> 后注入假时钟 + 模板覆盖，就能确定性地验倒计时规则。
+PIN_JS = (
+    "<script>(function(){"
+    "var FIX=Date.parse('@D@T@:00');var _D=Date;"
+    "function ND(a,b,c,d,e,f,g){var n=arguments.length;"
+    " if(n===0)return new _D(FIX);"
+    " if(n===1)return new _D(a);"
+    " return new _D(a,b,c,d,e,f,g);}"
+    "ND.prototype=_D.prototype;ND.now=function(){return FIX;};ND.parse=_D.parse;ND.UTC=_D.UTC;"
+    "window.Date=ND;"
+    "function ov(){try{localStorage.setItem('sqzy-today','@O@');"
+    " return localStorage.getItem('sqzy-today')==='@O@';}catch(e){return false;}}"
+    "if(!ov()){var S={getItem:function(k){return k==='sqzy-today'?'@O@':null;},"
+    " setItem:function(){},removeItem:function(){}};"
+    " try{Object.defineProperty(window,'localStorage',{value:S,configurable:true});}catch(e2){}}"
+    "})();</script>")
+
+
+def pin_html(text, override, ymd, hm):
+    """在页面 <head> 后插一段假时钟：override 是模板名（weekday/saturday/...）"""
+    js = PIN_JS.replace('@D@T@', ymd + 'T' + hm).replace('@O@', override)
+    m = re.search(r'<head[^>]*>', text, re.I)
+    if not m:
+        return None
+    return text[:m.end()] + js + text[m.end():]
+
+
+def render_pin(page_text, override, ymd, hm, w, h, name, android=False):
+    """按钉死的时间渲染一遍；拿到 (dom, err)，失败返回 (None, None)"""
+    if not page_text:
+        return None, None
+    html = pin_html(page_text, override, ymd, hm)
+    if html is None:
+        return None, None
+    prof = tempfile.mkdtemp(prefix='sqzy_pin_')
+    try:
+        p = os.path.join(prof, name)
+        io.open(p, 'w', encoding='utf-8').write(html)
+        return render(w, h, android, path=p)
+    finally:
+        shutil.rmtree(prof, ignore_errors=True)
+
+
+def render(w, h, android=False, path=None):
     prof = tempfile.mkdtemp(prefix='sqzy_smoke_')
+    u = url if path is None else 'file:///' + quote(os.path.abspath(path).replace('\\', '/'), safe='/:')
     cmd = [exe, '--headless=new', '--disable-gpu', '--no-first-run',
            '--user-data-dir=' + prof, '--window-size=%d,%d' % (w, h),
            '--virtual-time-budget=6000', '--enable-logging=stderr', '--v=0',
-           '--dump-dom', url]
+           '--dump-dom', u]
     if android:
         cmd.insert(1, '--user-agent=' + ANDROID_UA)
     try:
@@ -102,7 +148,24 @@ def render(w, h, android=False):
     return r.stdout or '', r.stderr or ''
 
 
-def check(label, dom, err, mobile=False, android=False):
+def now_items(bar):
+    """拆 #nowBar：每个学院 -> (状态文字, 倒计时类型, 倒计时文字)"""
+    out = []
+    for chunk in bar.split('<div class="nowitem')[1:]:
+        st = re.search(r'<span>([^<]*)</span>', chunk)
+        cd = re.search(r'<em class="cd ([a-z]+)">([^<]*)</em>', chunk)
+        out.append((st.group(1).strip() if st else '',
+                    cd.group(1) if cd else '', cd.group(2) if cd else ''))
+    return out
+
+
+RANGE = r'\d{1,2}:\d{2}[–—-]\d{1,2}:\d{2}'
+NO_CD_STATE = ('未开课', '已关寝')
+FREE_STATE = '休息'
+PREP_STATE = '就寝准备'
+
+
+def check(label, dom, err, mobile=False, android=False, pin=None):
     fail = []
     print('  [%s]' % label)
 
@@ -165,17 +228,64 @@ def check(label, dom, err, mobile=False, android=False):
         if 'id="vtNow"' not in body:
             fail.append('竖排时间轴的「现在」线没有生成')
 
-    now = datetime.datetime.now()
-    mins = now.hour * 60 + now.minute
-    if 8 * 60 <= mins <= 21 * 60 + 35:      # 这段区间里必然有课/课间，倒计时不该为空
-        if re.search(r'<em class="cd ([a-z]+)">', bar):
-            print('    ✓ 倒计时已渲染（当前 %s 在上课时段内）' % now.strftime('%H:%M'))
+    rows = now_items(bar)
+    if pin is not None:
+        kind_want, word_want, n_want = pin
+        got = [(k, w) for _, k, w in rows if k]      # 只看真的渲染出倒计时的那些
+        bad = []
+        if len(rows) != 4:
+            bad.append('学院卡片 %d 条（应为 4）' % len(rows))
+        if len(got) != n_want:
+            bad.append('倒计时 %d 条（应为 %d）：%s' % (len(got), n_want, [w for _, w in got]))
+        for k, w in got:
+            if kind_want and k != kind_want:
+                bad.append('倒计时类型 %s（应为 %s）：%s' % (k, kind_want, w))
+            if word_want and word_want not in w:
+                bad.append('倒计时文字里没有「%s」：%s' % (word_want, w))
+        if bad:
+            for x in bad[:4]:
+                print('    ✗ %s' % x)
+            fail.append('定时刻断言不符 %d 处' % len(bad))
         else:
-            fail.append('当前 %s 属于上课时段，却一条倒计时都没有' % now.strftime('%H:%M'))
+            print('    ✓ 定时刻断言通过：%s'
+                  % ('、'.join(w for _, w in got) if got else '全部休息，无倒计时'))
+        return fail
+
+    # 倒计时该不该有：只看渲染出来的状态，不看今天是周几
+    # （节假日/周末没课，本来就没有倒计时 —— 以前按「08:00–21:35 必有倒计时」判，节假日必误报）
+    bad = []
+    for txt, kind, word in rows:
+        base = txt.split(' ')[0]
+        if base in NO_CD_STATE:
+            if kind:
+                bad.append('%s 不该有倒计时（%s）' % (txt, word))
+        elif base == FREE_STATE:
+            if kind and '关寝' not in word:
+                bad.append('休息段的倒计时应为「距关寝」：%s' % word)
+        elif base == PREP_STATE:
+            if not kind:
+                bad.append('%s 缺「距关寝」倒计时' % txt)
+        elif re.search(RANGE, txt):
+            if not kind:
+                bad.append('%s 在时段内却没有倒计时' % txt)
+        else:
+            print('    · 认不出的状态文字（不判失败）: %s' % txt)
+    if bad:
+        for x in bad[:4]:
+            print('    ✗ %s' % x)
+        fail.append('状态与倒计时不一致 %d 处' % len(bad))
     else:
-        print('    · 当前 %s 不在 08:00–21:35 内，跳过倒计时断言' % now.strftime('%H:%M'))
+        print('    ✓ 状态与倒计时自洽（%d 条学院卡片，%s）'
+              % (len(rows), datetime.datetime.now().strftime('%H:%M')))
     return fail
 
+
+PAGE_TEXT = ''
+if not target.startswith(('http://', 'https://')):
+    try:
+        PAGE_TEXT = io.open(target, encoding='utf-8').read()
+    except Exception as e:
+        print('  · 读不到页面源码（%s），跳过定时刻渲染' % e)
 
 allfail = []
 for label, w, h, mob, andr in (('横版 1400x1000', 1400, 1000, False, False),
@@ -183,6 +293,18 @@ for label, w, h, mob, andr in (('横版 1400x1000', 1400, 1000, False, False),
                               ('安卓 UA 430x900', 430, 900, True, True)):
     dom, err = render(w, h, andr)
     allfail += check(label, dom, err, mob, andr)
+
+# 定时刻跑三遍：倒计时规则跟「今天周几 / 是不是节假日」脱钩，否则节假日必误报。
+# 覆盖三条规则：周内正课有倒计时 / 休息段距关寝 ≤2 小时要报关寝 / 白天休息不乱报。
+for label, ov, ymd, hm, kind, word, n in (
+        ('定时 周三 10:00 · 周内正课', 'weekday', '2026-09-23', '10:00', 'end', '下课', 4),
+        ('定时 周六 17:30 · 休息距关寝', 'saturday', '2026-09-26', '17:30', 'end', '关寝', 4),
+        ('定时 周日 09:00 · 白天休息', 'sunday', '2026-09-27', '09:00', '', '', 0)):
+    dom, err = render_pin(PAGE_TEXT, ov, ymd, hm, 1400, 700, os.path.basename(target))
+    if dom is None:
+        print('  [%s]  · 跳过（只有本地页面文件才能定时刻渲染）' % label)
+        continue
+    allfail += check(label, dom, err, pin=(kind, word, n))
 
 print('  smoke: %s' % ('PASS' if not allfail else 'FAIL'))
 for x in allfail:
