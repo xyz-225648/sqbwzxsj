@@ -27,6 +27,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import socket
 import socketserver
 import subprocess
@@ -45,7 +46,7 @@ APP_TITLE = '宿迁职业技术学院作息时间表'
 # 桌面壳自己的版本号（程序本体版本，与页面版本分开算）：
 # 只有改了壳代码、重打 exe 时才升；纯改页面 / calendar.txt 不用动它。
 # 页面拿它跟仓库里的 program.txt 比，用来发现「网页是最新的、但程序本体老了」。
-SHELL_VERSION = 'v2.4.0'
+SHELL_VERSION = 'v2.4.1'
 WEBVIEW2_GUID = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
 
 UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/'
@@ -572,6 +573,11 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
             api_log('下载新版：%s（%s）' % (ok, msg))
             return self._reply({'ok': ok, 'msg': msg})
         if u.path == '/apply':
+            url = q.get('url', [''])[0]
+            sha = q.get('sha256', [''])[0]
+            ver = q.get('v', [''])[0]
+            if url:
+                _UPDATE['info'] = {'exeUrl': url, 'exeSha256': sha, 'exe': ver}
             ok, msg = apply_update()
             return self._reply({'ok': ok, 'msg': msg})
         if u.path == '/config':
@@ -709,52 +715,36 @@ def download_file(url, dest, sha256=None):
 
 
 def apply_update():
-    """退出后旁路替换自己：PyInstaller onefile 运行中不能覆盖自身，
-    所以写一个 cmd，等本进程退出后 move 覆盖再重启。"""
-    if not getattr(sys, 'frozen', False):
-        return False, '源码模式不支持自我替换（请用发行版里的 exe）'
-    if not _UPDATE['path'] or not os.path.exists(_UPDATE['path']):
-        return False, '还没有下载好的新版本'
+    """启动内置的独立更新器：下载新安装包 → 校验 sha256 → 结束旧进程 →
+    原位置覆盖 → 启动新程序 → 更新器自我删除。
+
+    更新器用独立 exe 而不是 cmd/vbs：带中文路径的参数不会再被脚本层吞掉。"""
+    if not _UPDATE['path']:
+        # 新版流程不需要先下载：更新器自己按 program.txt 的直链 + sha256 下载
+        pass
     exe = sys.executable
-    cmd_path = os.path.join(tempfile.gettempdir(), 'sqzy_update.cmd')
-    new = _UPDATE['path']
-    pid = os.getpid()
-    # 注意：newline='' —— 行尾自己写成 CRLF，别让 Python 再翻译一次（会变成 CR CR LF，
-    # cmd 解析不了整段脚本，替换就静默失效了，这个坑踩过一次）
+    info = _UPDATE.get('info') or {}
+    url = info.get('exeUrl')
+    sha = info.get('exeSha256')
+    ver = info.get('exe') or _UPDATE.get('version') or ''
+    if not url or not sha:
+        return False, '缺少下载地址或校验值'
+    if getattr(sys, 'frozen', False):
+        src = os.path.join(getattr(sys, '_MEIPASS', ''), 'sqzy_updater.exe')
+    else:
+        src = os.path.join(base_dir(), 'sqzy_updater.exe')
+    if not os.path.exists(src):
+        return False, '内置更新器缺失'
+    updater = os.path.join(tempfile.gettempdir(), 'sqzy_updater.exe')
     try:
-        vbs_path = os.path.join(tempfile.gettempdir(), 'sqzy_update.vbs')
-        with open(vbs_path, 'w', encoding='gbk', newline='\r\n') as f:
-            # 用 vbs 以「完全隐藏」方式跑 cmd，避免弹黑窗口（用户反馈过）
-            f.write('CreateObject("WScript.Shell").Run "cmd /c ""' + cmd_path + '"" ""' + _UPDATE['path'] + '"" ""' + exe + '""", 0, False' + chr(13) + chr(10))
-        with open(cmd_path, 'w', encoding='gbk', newline='') as f:
-            f.write('@echo off\r\n')
-            f.write('rem 先等助手退出，再结束主程序 —— 主程序不退出，exe 文件被占用，move 一定失败（踩过）\r\n')
-            f.write('ping -n 3 127.0.0.1 >nul\r\n')
-            f.write('taskkill /IM "%~nx1" /F >nul 2>nul\r\n')
-            f.write('set /a n=0\r\n')
-            f.write(':retry\r\n')
-            f.write('move /y "%~1" "%~2" >nul 2>nul\r\n')
-            f.write('if not exist "%~1" goto :run\r\n')
-            f.write('set /a n+=1\r\n')
-            f.write('if %n% geq 40 goto :fail\r\n')
-            f.write('ping -n 2 127.0.0.1 >nul\r\n')
-            f.write('goto :retry\r\n')
-            f.write(':run\r\n')
-            f.write('start "" "%~2"\r\n')
-            f.write('del "%~f0"\r\n')
-            f.write('del "%~f0".vbs >nul 2>nul\r\n')
-            f.write('exit /b\r\n')
-            f.write(':fail\r\n')
-            # 路径里的反斜杠要转义（写成 \s 会触发 SyntaxWarning，生成的 cmd 内容完全一样）
-            f.write('echo %date% %time% 替换失败，新版本仍在 %~1 > "%TEMP%\\sqzy_update.log"\r\n')
-            f.write('start "" "%~2"\r\n')
-            f.write('del "%~f0"\r\n')
-        # 参数：新文件、目标 exe（%~nx1 用于 taskkill，先停主程序再替换）
-        subprocess.Popen(['wscript.exe', vbs_path], creationflags=0x08000000, close_fds=True)
-        api_log('已安排替换并重启：%s' % _UPDATE['version'])
-        return True, '程序将退出并在替换后自动重启'
+        shutil.copyfile(src, updater)
+        subprocess.Popen([updater, '--url', url, '--sha256', sha,
+                          '--target', exe, '--version', ver],
+                         creationflags=0x08000000, close_fds=True)
+        api_log('已启动更新器：%s -> %s' % (ver, exe))
+        return True, '更新器已启动，程序将退出并自动替换重启'
     except Exception as exc:
-        api_log('安排替换失败 %r' % (exc,), 'error')
+        api_log('启动更新器失败 %r' % (exc,), 'error')
         return False, str(exc)[:120]
 
 
