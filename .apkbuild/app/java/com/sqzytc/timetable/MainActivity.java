@@ -52,6 +52,14 @@ public class MainActivity extends Activity {
     private static final String[] MARKERS = {"宿迁职业技术学院作息时间表", "<html"};
     private static final int MIN_HTML = 5000;
     private static final String BASE_URL = "https://gitee.com/";
+    /* 页面本体的备用来源（见 pageUrls）：发行版附件 + 码云 contents API */
+    private static final String RELEASE_DL = "https://gitee.com/xyz-225648/sqbwzxsj/releases/download/";
+    private static final String API_PAGE =
+            "https://gitee.com/api/v5/repos/xyz-225648/sqbwzxsj/contents/index.html?ref=master";
+    private static final java.util.regex.Pattern API_CONTENT =
+            java.util.regex.Pattern.compile("\"content\"\\s*:\\s*\"([^\"]+)\"");
+    private static final java.util.regex.Pattern VER_IN_LATEST =
+            java.util.regex.Pattern.compile("\"v\"\\s*:\\s*\"(v?[0-9.]+)\"");
 
     private WebView web;
     private volatile boolean alive = true;
@@ -502,7 +510,7 @@ public class MainActivity extends Activity {
             if (localVer != null && remoteVer.equals(localVer.trim())) {
                 return null;
             }
-            String html = http(base + "index.html");
+            String html = fetchPage(tagOf(remoteVer));
             if (!isValid(html)) {
                 return null;
             }
@@ -512,6 +520,63 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    /** 从 version.txt 的内容里取出版本号（window.SQZY_LATEST={"v": "v2.3.15", ...}） */
+    private static String tagOf(String latest) {
+        java.util.regex.Matcher m = VER_IN_LATEST.matcher(latest == null ? "" : latest);
+        if (!m.find()) {
+            return "";
+        }
+        String v = m.group(1);
+        return v.startsWith("v") ? v : "v" + v;
+    }
+
+    /**
+     * 页面本体的取法，按可靠性排序。
+     * 为什么要一串：码云 raw 对**大文件**直接返回
+     *   451 The content may contain violation information
+     * （2026-09-25 实测：同一个仓库里 ≤24 KB 正常、≥39 KB 全被挡，跟内容无关），
+     * 而页面有 148 KB —— 只走 raw 的话「网页热更新」等于断了。
+     *   1) 发行版附件：index.html 也挂一份到 release 上，tag 就是版本号
+     *   2) contents API：匿名可读、内容永远跟仓库一致（base64）
+     *   3) raw：小文件最快；大文件会 451，留着不亏
+     */
+    private static String[] pageUrls(String tag) {
+        java.util.List<String> out = new java.util.ArrayList<String>();
+        if (tag != null && tag.length() > 1) {
+            out.add(RELEASE_DL + tag + "/index.html");
+        }
+        out.add(API_PAGE);
+        for (String b : baseCandidates()) {
+            out.add(b + "index.html");
+        }
+        return out.toArray(new String[0]);
+    }
+
+    /** 取页面：按 pageUrls() 依次试，返回第一个通过校验的；都失败返回 null */
+    private static String fetchPage(String tag) {
+        for (String u : pageUrls(tag)) {
+            try {
+                String body = http(u);
+                if (u.contains("/contents/")) {
+                    java.util.regex.Matcher m = API_CONTENT.matcher(body);
+                    if (!m.find()) {
+                        continue;
+                    }
+                    body = new String(android.util.Base64.decode(
+                            m.group(1).replace("\\n", "").replace("\n", ""),
+                            android.util.Base64.DEFAULT), "UTF-8");
+                }
+                if (isValid(body)) {
+                    Log.i("sqzy", "页面取自 " + u.substring(0, Math.min(60, u.length()))
+                            + "（" + body.length() + " 字节）");
+                    return body;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
     }
 
     private static boolean isValid(String html) {
