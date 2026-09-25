@@ -68,11 +68,17 @@ def move_with_retry(src, dst, tries=40):
 
 
 def delete_self():
+    """更新器自我删除：直接 spawn 的 cmd 会随父进程退出被杀掉，
+    所以写一个小 vbs，由 wscript 在父进程退出后继续执行删除。"""
     me = os.path.abspath(sys.argv[0])
+    vbs = os.path.join(tempfile.gettempdir(), 'sqzy_del.vbs')
     try:
-        subprocess.Popen(
-            ['cmd.exe', '/c', 'ping -n 2 127.0.0.1 >nul & del /f /q "%s"' % me],
-            creationflags=0x08000000, close_fds=True)
+        with open(vbs, 'w', encoding='gbk', newline='\r\n') as f:
+            # 先 ping 3 秒等更新器进程完全退出、文件解锁，再删更新器和 vbs 自己
+            f.write('CreateObject("WScript.Shell").Run '
+                    '"cmd /c ping -n 4 127.0.0.1 >nul & del /f /q ""%s"" >nul 2>nul & del /f /q ""%s"" >nul 2>nul", 0, False\r\n'
+                    % (me, vbs))
+        subprocess.Popen(['wscript.exe', vbs], creationflags=0x08000000, close_fds=True)
     except Exception:
         pass
 
