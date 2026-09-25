@@ -131,21 +131,32 @@ def render_pin(page_text, override, ymd, hm, w, h, name, android=False):
         shutil.rmtree(prof, ignore_errors=True)
 
 
-def render(w, h, android=False, path=None):
-    prof = tempfile.mkdtemp(prefix='sqzy_smoke_')
-    u = url if path is None else 'file:///' + quote(os.path.abspath(path).replace('\\', '/'), safe='/:')
-    cmd = [exe, '--headless=new', '--disable-gpu', '--no-first-run',
-           '--user-data-dir=' + prof, '--window-size=%d,%d' % (w, h),
-           '--virtual-time-budget=6000', '--enable-logging=stderr', '--v=0',
-           '--dump-dom', u]
-    if android:
-        cmd.insert(1, '--user-agent=' + ANDROID_UA)
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8',
-                           errors='replace', timeout=120)
-    finally:
-        shutil.rmtree(prof, ignore_errors=True)
-    return r.stdout or '', r.stderr or ''
+BROWSER_TIMEOUT = 'BROWSER-TIMEOUT'
+
+
+def render(w, h, android=False, path=None, tries=2):
+    """跑一次无头浏览器。超时（机器忙 / 杀软拦 / 浏览器卡住）重试一次再放弃：
+    以前超时直接抛 subprocess.TimeoutExpired，整个闸门只剩一段 traceback，看不出是什么问题。"""
+    for attempt in range(tries):
+        prof = tempfile.mkdtemp(prefix='sqzy_smoke_')
+        u = url if path is None else 'file:///' + quote(os.path.abspath(path).replace('\\', '/'), safe='/:')
+        cmd = [exe, '--headless=new', '--disable-gpu', '--no-first-run',
+               '--user-data-dir=' + prof, '--window-size=%d,%d' % (w, h),
+               '--virtual-time-budget=6000', '--enable-logging=stderr', '--v=0',
+               '--dump-dom', u]
+        if android:
+            cmd.insert(1, '--user-agent=' + ANDROID_UA)
+        try:
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8',
+                                   errors='replace', timeout=120)
+            except subprocess.TimeoutExpired:
+                print('    · 无头浏览器 120 秒没返回（第 %d/%d 次），重试' % (attempt + 1, tries))
+                continue
+            return r.stdout or '', r.stderr or ''
+        finally:
+            shutil.rmtree(prof, ignore_errors=True)
+    return '', BROWSER_TIMEOUT
 
 
 def now_items(bar):
@@ -185,6 +196,9 @@ def check(label, dom, err, mobile=False, android=False, pin=None):
     else:
         print('    启动步骤异常: 0 处')
 
+    if BROWSER_TIMEOUT in (err or ''):
+        fail.append('无头浏览器两次都 120 秒没返回 —— 环境问题（机器忙/杀软拦），不是页面缺陷；重跑一次')
+        return fail
     if '<html' not in dom.lower():
         fail.append('页面没有渲染出 DOM（拿到 %d 字节）' % len(dom))
         return fail
