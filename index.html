@@ -1367,13 +1367,13 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.4.0';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.4.1';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 页面热更新（version.txt）的发行版 tag：主要用来取 index.html 附件，跟页面版本号走。
    程序本体（exe/apk）的下载 tag 在 program.txt 里单独记（= 程序本体版本），两者分开算；
    只有 program.txt 拿不到时才拿 RELEASE_TAG 兜底。 */
-var RELEASE_TAG = 'v2.4.0';
+var RELEASE_TAG = 'v2.4.1';
 var latestInfo = null;
 /* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
 var SHELL_SEEN_KEY = 'sqzy-seen-shell';
@@ -1663,7 +1663,8 @@ function showUpdateDialog(info){
   apk.style.textAlign = 'center';
   apk.style.textDecoration = 'none';
   apk.style.boxSizing = 'border-box';
-  apk.setAttribute('data-url', shellAssetUrl(latestInfo, 'apk'));
+  var apkInfo = programInfo || latestInfo;   /* 安装包信息优先用 program.txt（含直链/目标版本） */
+  apk.setAttribute('data-url', shellAssetUrl(apkInfo, 'apk'));
   apk.href = apk.getAttribute('data-url');
   apk.target = '_blank';
   apk.rel = 'noopener';
@@ -1673,7 +1674,7 @@ function showUpdateDialog(info){
     apk.href = 'javascript:void 0';
     apk.addEventListener('click', function(ev){
       ev.preventDefault();
-      downloadApkSmart(latestInfo);
+      downloadApkSmart(programInfo || latestInfo);
     });
   }
 
@@ -1847,10 +1848,12 @@ function downloadApkSmart(info){
   return false;
 }
 function shellAssetUrl(info, kind){
-  /* program.txt 里带直链就用它，没带就按发行包命名规则拼 */
+  /* program.txt 里带直链就用它，没带就按版本号拼：优先 program 的 tag，
+     再退回 version.txt 的 v（老页面发现大版本更新时 program.txt 可能还没读到，
+     不能再退回旧页面的 RELEASE_TAG，否则会下载到旧版安装包）。 */
   var u = info && (kind === 'apk' ? info.apkUrl : info.exeUrl);
   if (u) return u;
-  var tag = (info && info.tag) || RELEASE_TAG;
+  var tag = (info && (info.tag || info.v)) || RELEASE_TAG;
   return 'https://gitee.com/xyz-225648/sqbwzxsj/releases/download/' + tag + '/' +
     encodeURIComponent(kind === 'apk' ? '宿迁职业技术学院作息时间表.apk' : '宿迁职业技术学院作息时间表.exe');
 }
