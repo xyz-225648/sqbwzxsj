@@ -2,7 +2,7 @@
 
 四个学院（信息设计 / 信息基础 / 通识教育 / 女子教育）的一日作息时间轴，**Windows 桌面版 / 安卓手机版 / 浏览器网页版** 三端通用。
 
-当前版本：**v2.3.14**
+当前版本：**v2.3.15**
 
 ## 下载使用
 
@@ -12,7 +12,7 @@
 |---|---|---|
 | **Windows** | 宿迁职业技术学院作息时间表.exe | 双击即用，免安装（需 WebView2，Win11 自带） |
 | **安卓手机** | 宿迁职业技术学院作息时间表.apk | 允许「安装未知来源应用」后安装 |
-| **浏览器** | index.html（仓库根目录） | 任意浏览器直接打开 |
+| **浏览器** | index.html（仓库根目录） | 任意浏览器直接打开；仓库 raw 的大文件被码云挡（451），想直接在线看用 jsDelivr：[cdn.jsdelivr.net/gh/xyz-225648/sqbwzxsj@master/index.html](https://cdn.jsdelivr.net/gh/xyz-225648/sqbwzxsj@master/index.html) |
 
 > 手机用户优先用页面里的「**一键下载安装包**」：应用内走系统下载器、浏览器走带 CORS 的镜像，
 > 两条路都会存成真正的 `.apk`。只有在 gitee 发行版页面**直接点附件**时才会下到 `.apk.zip`
@@ -79,6 +79,13 @@
 
 **改课表只需要动 index.html 和 version.txt**，所有人下次打开就是最新的，不用重装。
 换 exe / apk 才算「发新版」，那时才需要在发行版里替换附件。
+
+> **页面本体按三个来源依次取**（2026-09-25 起，桌面版与安卓版同一套顺序）：
+> ① 发行版附件 `releases/download/<版本号>/index.html` → ② 码云 contents API（base64）→ ③ 仓库 raw。
+> 为什么会这样：码云 raw 对**大文件**返回 `451 The content may contain violation information`
+> （实测同一个仓库里 ≤24 KB 正常、≥39 KB 全被挡，跟内容无关），而页面有 148 KB ——
+> 只走 raw 的话「网页热更新」就静默失效了，用户只会一直看到安装包里内置的旧页面。
+> 所以**每次发布都要把 `release/index.html` 也传成发行版附件**（`check_live.py` 会机械校验，缺了直接判 FAIL）。
 
 详见 [自动更新使用说明.md](自动更新使用说明.md)。
 
