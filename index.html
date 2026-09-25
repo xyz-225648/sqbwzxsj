@@ -1759,16 +1759,15 @@ function downloadExeSmart(info){
   var want = normVer((info && info.exe) || (info && info.v) || '');
   var url = shellAssetUrl(info || {}, 'exe');
   if (!base){ openExternal(shellDownloadUrl(info)); return; }
-  inPageToast('正在下载新版程序…', '下载完会先核对 sha256，再退出替换并自动重启');
-  var q = '/download?' + apiQs() + '&url=' + encodeURIComponent(url) + '&v=' + encodeURIComponent(want)
+  inPageToast('正在启动更新器…', '更新器会下载新程序、核对 sha256，然后退出替换并自动重启');
+  var q = '/apply?' + apiQs() + '&url=' + encodeURIComponent(url) + '&v=' + encodeURIComponent(want)
         + ((info && info.exeSha256) ? '&sha256=' + encodeURIComponent(info.exeSha256) : '');
-  fetch(base + q).then(function(r){ return r.json(); }).then(function(o){
-    if (!o || !o.ok) throw new Error((o && o.msg) || '下载失败');
-    inPageToast('校验通过，正在替换…', '程序会退出一下，然后自动回来（课表和设置都不会丢）');
-    return fetch(base + '/apply?' + apiQs()).then(function(r){ return r.json(); }).then(function(a){
-      if (!a || !a.ok) throw new Error((a && a.msg) || '替换失败');
-      inPageToast('更新已就绪', '程序马上退出替换，几秒后自动重启');
-    });
+  fetch(base + q).then(function(r){ return r.json(); }).then(function(a){
+    if (!a || !a.ok) throw new Error((a && a.msg) || '更新失败');
+    inPageToast('更新已就绪', '程序马上退出，几秒后自动重启');
+    setTimeout(function(){
+      try{ fetch(base + '/quit?' + apiQs()); }catch(e){}
+    }, 400);
   }).catch(function(err){
     inPageToast('一键更新没成功', String((err && err.message) || err) + '；已改成打开发行版页面');
     openExternal(shellDownloadUrl(info));
