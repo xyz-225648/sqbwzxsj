@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.sqzytc.timetable"
-    android:versionCode="20315"
-    android:versionName="2.3.15">
-    <!-- versionCode / versionName 必须跟页面里的 APP_VERSION 对上：
+    android:versionCode="20400"
+    android:versionName="2.4.0">
+    <!-- versionCode / versionName 是「程序本体版本」，与页面版本分开算：
+         只有重打 apk 时才升；纯改页面 / calendar.txt 不用动它。
          versionCode = 主*10000 + 次*100 + 补丁（2.1.0 → 20100） -->
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34" />
     <!-- 仅用于检查更新；断网时照常使用内置页面 -->
