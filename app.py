@@ -721,7 +721,8 @@ def apply_update():
             f.write('del "%~f0".vbs >nul 2>nul\r\n')
             f.write('exit /b\r\n')
             f.write(':fail\r\n')
-            f.write('echo %date% %time% 替换失败，新版本仍在 %~1 > "%TEMP%\sqzy_update.log"\r\n')
+            # 路径里的反斜杠要转义（写成 \s 会触发 SyntaxWarning，生成的 cmd 内容完全一样）
+            f.write('echo %date% %time% 替换失败，新版本仍在 %~1 > "%TEMP%\\sqzy_update.log"\r\n')
             f.write('start "" "%~2"\r\n')
             f.write('del "%~f0"\r\n')
         # 参数：新文件、目标 exe（%~nx1 用于 taskkill，先停主程序再替换）
