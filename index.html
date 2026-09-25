@@ -1759,6 +1759,36 @@ function downloadExeSmart(info){
   var want = normVer((info && info.exe) || (info && info.v) || '');
   var url = shellAssetUrl(info || {}, 'exe');
   if (!base){ openExternal(shellDownloadUrl(info)); return; }
+
+  var sv = verNum(shellVer || 'v0.0.0');
+  if (sv < verNum('v2.4.0')){
+    /* 2.4.0 以前的壳：更新接口/替换脚本不兼容新流程，强行点会失败；
+       引导用户先手动下载安装一次，装上新壳以后就能一键更新。 */
+    inPageToast('当前程序版本较老', '请先手动下载并安装一次新版（覆盖安装，数据不丢），以后就能一键更新');
+    openExternal(shellDownloadUrl(info));
+    return;
+  }
+
+  if (sv < verNum('v2.4.1')){
+    /* 2.4.0 的壳：还没有内置更新器，走「先下载到临时目录，再 /apply 替换」的旧流程 */
+    inPageToast('正在下载新版程序…', '下载完会先核对 sha256，再退出替换并自动重启');
+    var q = '/download?' + apiQs() + '&url=' + encodeURIComponent(url) + '&v=' + encodeURIComponent(want)
+          + ((info && info.exeSha256) ? '&sha256=' + encodeURIComponent(info.exeSha256) : '');
+    fetch(base + q).then(function(r){ return r.json(); }).then(function(o){
+      if (!o || !o.ok) throw new Error((o && o.msg) || '下载失败');
+      return fetch(base + '/apply?' + apiQs()).then(function(r){ return r.json(); }).then(function(a){
+        if (!a || !a.ok) throw new Error((a && a.msg) || '替换失败');
+        inPageToast('更新已就绪', '程序马上退出替换，几秒后自动重启');
+        setTimeout(function(){ try{ fetch(base + '/quit?' + apiQs()); }catch(e){} }, 400);
+      });
+    }).catch(function(err){
+      inPageToast('一键更新没成功', String((err && err.message) || err) + '；已改成打开发行版页面');
+      openExternal(shellDownloadUrl(info));
+    });
+    return;
+  }
+
+  /* 2.4.1 起：内置独立更新器，下载/校验/替换/重启/自删一条龙 */
   inPageToast('正在启动更新器…', '更新器会下载新程序、核对 sha256，然后退出替换并自动重启');
   var q = '/apply?' + apiQs() + '&url=' + encodeURIComponent(url) + '&v=' + encodeURIComponent(want)
         + ((info && info.exeSha256) ? '&sha256=' + encodeURIComponent(info.exeSha256) : '');
