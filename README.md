@@ -2,7 +2,7 @@
 
 四个学院（信息设计 / 信息基础 / 通识教育 / 女子教育）的一日作息时间轴，**Windows 桌面版 / 安卓手机版 / 浏览器网页版** 三端通用。
 
-当前版本：**v2.4.1**
+当前版本：**v2.4.1**（页面） · 程序本体：**v2.4.2**（exe / apk）
 
 ## 目录
 
@@ -82,6 +82,18 @@
 按学院分别开关通知、下课前提醒（可调提前几分钟）、上课前 / 开始上课 / 下课时提醒，
 还能发一条测试通知验证通道是否正常。
 
+## 特殊日表（校历）
+
+节假日 / 调休 / 临时停课统一维护在仓库的 `calendar.txt`，**改它不用发版、不用重装**，用户下次打开自动生效：
+
+```txt
+# 格式：日期(或日期区间) + 模板名 + 说明
+2026-09-27 weekday  中秋调休：全天按周内课表上课
+```
+
+模板名：`weekday` 周内 / `saturday` 上午课+下午休息 / `sunday` 白天休息+晚自习 / `holiday` 全天休息。
+命中的当天，页面顶部提示条会显示调休说明；按周内上课的调休日也会显示提示条。
+
 ## 自动更新
 
 软件启动时先秒开本地版本，再后台去码云问一句「有没有新版本」，有就静默替换新页面。
@@ -90,10 +102,11 @@
 （由 `make_program_txt.py` 从 `app.py` 的 `SHELL_VERSION` 与安卓 `versionName` 读出程序本体版本，再算本地发行包）。
 网页能自动热更新、程序本体不能，所以页面会拿它比一次 —— 发现自己落后就在「设置 → 关于」提示「程序本体有新版」：
 
-- Windows：给出「**一键更新**」，页面把直链和 sha256 交给 exe 的本地接口
-  `/download`（下载 + 校验）→ `/apply`（写一个替换脚本，等本进程退出后 `move` 覆盖自身并重启）。
+- Windows：给出「**一键更新**」，页面把直链和 sha256 交给 exe 的本地接口 `/apply`，
+  主程序释放出内置的**独立更新器 `sqzy_updater.exe`**：下载新安装包 → 校验 sha256 →
+  结束旧进程 → 原位置覆盖 exe → 启动新程序 → 更新器自我删除。
   PyInstaller onefile 运行中不能覆盖自己，所以必须绕过一层；校验不过就停在原地不乱换。
-- 安卓：走 DownloadManager 后台下载，下完点通知安装，覆盖安装不会丢数据。
+- 安卓：走 DownloadManager 后台下载，下完直接拉起系统安装器，覆盖安装不会丢数据。
 
 **改课表只需要动 index.html 和 version.txt**，所有人下次打开就是最新的，不用重装。
 **热更新与程序本体更新分开算**：纯页面 / 数据变更只升页面版本（`APP_VERSION` → `version.txt`），
@@ -142,16 +155,16 @@ python -m http.server 8123
 # 2) 发布闸门（生成 release/{index.html,version.txt,program.txt}，任何一项不过就中止）
 python publish.py          # Windows 上没 bash 也能跑；bash publish.sh 只是转发
 
-# 3) Windows EXE（PyInstaller onefile；产物是 dist/sqzy_schedule.exe）
-python -m PyInstaller --noconfirm --clean --onefile --windowed \
-  --name sqzy_schedule --icon app.ico \
-  --add-data "宿迁职业技术学院作息时间表.html;." \
-  --hidden-import webview.platforms.edgechromium app.py
+# 3) 先编译独立更新器（主程序打包时会把它内嵌进 exe）
+python -m PyInstaller --noconfirm --clean --onefile --windowed --name sqzy_updater updater.py
 
-# 4) 安卓 APK（产物覆盖仓库根目录的 宿迁职业技术学院作息时间表.apk）
+# 4) Windows EXE：用 sqzy_schedule.spec（版本资源 + 内嵌更新器都写在 spec 里）
+python -m PyInstaller sqzy_schedule.spec --noconfirm --clean
+
+# 5) 安卓 APK（产物覆盖仓库根目录的 宿迁职业技术学院作息时间表.apk）
 python .apkbuild/build_apk.py
 
-# 5) 按版本号备份本次构建产物（exe/apk → backups/，防止后续版本覆盖丢失）
+# 6) 按版本号备份本次构建产物（exe/apk → backups/，防止后续版本覆盖丢失）
 python backup_build.py
 ```
 
