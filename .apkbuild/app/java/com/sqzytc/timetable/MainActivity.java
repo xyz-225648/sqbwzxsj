@@ -499,7 +499,11 @@ public class MainActivity extends Activity {
         Thread t = new Thread(new Runnable() {
             @Override
             public void run() {
-                doUpdateCheck();
+                try { Thread.sleep(60000); } catch (Exception ignored) { }
+                while (alive) {
+                    doUpdateCheck();
+                    try { Thread.sleep(300000); } catch (Exception ignored) { }
+                }
             }
         });
         t.setDaemon(true);
