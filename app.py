@@ -46,7 +46,7 @@ APP_TITLE = '宿迁职业技术学院作息时间表'
 # 桌面壳自己的版本号（程序本体版本，与页面版本分开算）：
 # 只有改了壳代码、重打 exe 时才升；纯改页面 / calendar.txt 不用动它。
 # 页面拿它跟仓库里的 program.txt 比，用来发现「网页是最新的、但程序本体老了」。
-SHELL_VERSION = 'v2.4.1'
+SHELL_VERSION = 'v2.4.2'
 WEBVIEW2_GUID = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
 WEBVIEW2_INSTALL_URL = 'https://go.microsoft.com/fwlink/p/?LinkId=2124703'
 
@@ -1139,7 +1139,9 @@ def _do_show():
             user32.GetForegroundWindow.restype = wintypes.HWND
             user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.c_void_p]
             user32.SetForegroundWindow.argtypes = [wintypes.HWND]
-            hwnd = wintypes.HWND(int(form.Handle))
+            _h = form.Handle
+            _hw = _h.ToInt64() if hasattr(_h, 'ToInt64') else int(_h)
+            hwnd = wintypes.HWND(_hw)
             user32.ShowWindow(hwnd, 9)          # SW_RESTORE
             fg = user32.GetForegroundWindow()
             tid_fg = user32.GetWindowThreadProcessId(fg, None)
