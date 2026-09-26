@@ -48,6 +48,7 @@ APP_TITLE = '宿迁职业技术学院作息时间表'
 # 页面拿它跟仓库里的 program.txt 比，用来发现「网页是最新的、但程序本体老了」。
 SHELL_VERSION = 'v2.4.1'
 WEBVIEW2_GUID = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+WEBVIEW2_INSTALL_URL = 'https://go.microsoft.com/fwlink/p/?LinkId=2124703'
 
 UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/'
 # 页面本体的备用来源（见 page_candidates）：发行版附件 + contents API
@@ -856,15 +857,25 @@ def has_webview2():
 
 
 def open_in_browser(html, quiet=False):
+    """没有 WebView2 / 窗口创建失败时的兜底：优先引导安装 WebView2，
+    用户选「否」才退回用默认浏览器打开，避免误以为程序坏了。"""
     try:
         tmp = os.path.join(tempfile.gettempdir(), HTML_NAME)
         with open(tmp, 'w', encoding='utf-8') as f:
             f.write(html)
-        os.startfile(tmp)
         if not quiet:
-            msgbox('这台电脑没装 "Microsoft Edge WebView2 Runtime"，\n'
-                   '已改用默认浏览器打开。\n\n'
-                   '想以独立窗口运行的话，装一下微软官方的 WebView2 Runtime 即可（免费，约 2MB）。')
+            import ctypes
+            r = ctypes.windll.user32.MessageBoxW(
+                None,
+                '这台电脑没有安装 "Microsoft Edge WebView2 Runtime"，程序窗口无法打开。\n\n'
+                '点「是」立即下载微软官方安装程序（免费，约 2MB），\n'
+                '安装完成后重新运行本程序，就能正常打开独立窗口；\n'
+                '点「否」先用默认浏览器打开（功能相同，但没有独立窗口）。',
+                '缺少 WebView2 Runtime', 0x24)      # MB_YESNO | MB_ICONWARNING
+            if r == 6:                              # IDYES
+                os.startfile(WEBVIEW2_INSTALL_URL)
+                return True
+        os.startfile(tmp)
         return True
     except Exception as exc:
         if not quiet:
