@@ -883,8 +883,13 @@ function renderNow(){
   });
   html += '</div>';
   var sched = resolveSchedule(d);
-  if (sched !== SCHEDULES.weekday){
-    html += '<div class="daynote">今日：' + sched.label + '，请以学校实际安排为准。</div>';
+  var _spNote = (typeof SPECIAL_NOTE === 'object' && SPECIAL_NOTE) ? (SPECIAL_NOTE[calKey(d)] || '') : '';
+  if (sched !== SCHEDULES.weekday || _spNote){
+    /* 特殊日按周内课表上课时（如周日中秋调休）也要显示提示条，否则用户看不到调休说明 */
+    var _dn = _spNote
+      ? ('今日是' + ['周日','周一','周二','周三','周四','周五','周六'][d.getDay()] + ' · ' + _spNote)
+      : sched.label;
+    html += '<div class="daynote">今日：' + _dn + '，请以学校实际安排为准。</div>';
   }
   document.getElementById('nowBar').innerHTML = html;
 
