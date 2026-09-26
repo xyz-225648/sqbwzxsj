@@ -57,7 +57,7 @@ APP_TITLE = '宿迁职业技术学院作息时间表'
 # 桌面壳自己的版本号（程序本体版本，与页面版本分开算）：
 # 只有改了壳代码、重打 exe 时才升；纯改页面 / calendar.txt 不用动它。
 # 页面拿它跟仓库里的 program.txt 比，用来发现「网页是最新的、但程序本体老了」。
-SHELL_VERSION = 'v2.4.2'
+SHELL_VERSION = 'v2.4.3'
 WEBVIEW2_GUID = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
 WEBVIEW2_INSTALL_URL = 'https://go.microsoft.com/fwlink/p/?LinkId=2124703'
 
@@ -313,6 +313,17 @@ def silent_update(window):
         api_log('已热替换到新版本 %s' % ver)
     except Exception as exc:
         api_log('热替换失败 %r' % (exc,), 'error')
+
+
+def silent_update_loop(window):
+    """运行期间也持续检查版本：不用重新打开软件，检测到新版页面就自动重载窗口。"""
+    time.sleep(60)                       # 启动后先等一分钟，别跟首屏抢资源
+    while True:
+        try:
+            silent_update(window)
+        except Exception as exc:
+            api_log('热更新循环出错 %r' % (exc,), 'warn')
+        time.sleep(300)                   # 每 5 分钟查一次
 
 
 # ==================== Windows 原生通知 ====================
@@ -1359,7 +1370,7 @@ def run_window(html):
     install_window_behavior()
     threading.Thread(target=win_state_poller, daemon=True).start()
     if UPDATE_BASE:
-        threading.Thread(target=silent_update, args=(window,), daemon=True).start()
+        threading.Thread(target=silent_update_loop, args=(window,), daemon=True).start()
     # pywebview 默认 private_mode=True —— 文档原话「cookies and local storage are not
     # preserved」，而且窗口一关就把 profile 整个删掉。设置面板「改完不生效、下次打开
     # 又回到默认」就是这个原因（实测）。改成落盘 + 指定目录即可。
