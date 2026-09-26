@@ -1674,7 +1674,7 @@ function showUpdateDialog(info){
     apk.href = 'javascript:void 0';
     apk.addEventListener('click', function(ev){
       ev.preventDefault();
-      downloadApkSmart(programInfo || latestInfo);
+      downloadApkSmart(programInfo || latestInfo, true);
     });
   }
 
@@ -1853,11 +1853,18 @@ function fetchApkByMirror(info, i, cb){
     }).catch(function(){ fetchApkByMirror(info, i + 1, cb); });
   }).catch(function(){ fetchApkByMirror(info, i + 1, cb); });
 }
-function downloadApkSmart(info){
+function downloadApkSmart(info, manual){
   /* 有原生桥 → 交给系统下载器（按目标版本命名，存下来就是 .apk）；没有 → 走镜像自己保存；
-     两条都不行 → 打开 gitee 附件并说明改名办法 */
+     两条都不行 → 打开 gitee 附件并说明改名办法。
+     manual=true 且壳 < 2.4.0 时直接走浏览器：老壳系统下载器用“当前安装版本”起名、
+     不会覆盖已存在的旧文件，用户会反复装到之前下载的旧包。 */
   var gitee = shellAssetUrl(info, 'apk');
   if (isAndroid() && window.SQZY_ANDROID && (window.SQZY_ANDROID.downloadApkAs || window.SQZY_ANDROID.downloadApk)){
+    if (manual && verNum(shellVer || 'v0.0.0') < verNum('v2.4.0')){
+      inPageToast('已打开官方下载页', '请用浏览器下载后点安装（老版本 App 内下载容易下到旧包）');
+      openExternal(gitee);
+      return true;
+    }
     try{
       var want = (info && info.apk) ? normVer(info.apk) : (info && info.v ? normVer(info.v) : '');
       var r = window.SQZY_ANDROID.downloadApkAs
