@@ -2638,6 +2638,12 @@ function rerenderSchedule(){
   bootStep('当前状态', renderNow);
 }
 setInterval(rerenderSchedule, 20000);
+/* 当前状态/时钟每 30 秒刷新一次；切到后台再回来时立刻刷新，
+   否则手机把 WebView 挂起后时间会停在切走前的那一刻。 */
+setInterval(function(){ bootStep('当前状态', renderNow); }, 30000);
+document.addEventListener('visibilitychange', function(){
+  if (!document.hidden) bootStep('当前状态', renderNow);
+});
 document.addEventListener('visibilitychange', function(){ if (!document.hidden) rerenderSchedule(); });
 
 /* 调试/外部调用入口 */
