@@ -15,11 +15,22 @@ window.pywebview.api 整个暴露不出来（实测踩过）。
 import base64
 import hashlib
 def _page_file():
-    """页面文件名（P2）：本地开发叫「宿迁职业技术学院作息时间表.html」，仓库里是 index.html。
-    仓库只保留一份（避免两份内容漂移），所以这里按顺序找，clone 下来就能直接跑。"""
-    for _n in ('宿迁职业技术学院作息时间表.html', 'index.html'):
-        if os.path.exists(_n):
-            return _n
+    """页面文件名：优先 PyInstaller 解包目录（页面已打进 exe），
+    再找 exe 所在目录，最后看当前工作目录（源码运行）。
+    之前只找当前目录：双击/命令行启动时 CWD 可能是 System32，
+    导致 exe 里明明带了页面却报「找不到页面文件」直接退出。"""
+    import sys as _sys
+    roots = []
+    if getattr(_sys, 'frozen', False):
+        roots.append(getattr(_sys, '_MEIPASS', ''))
+        roots.append(os.path.dirname(os.path.abspath(_sys.executable)))
+    roots.append(os.getcwd())
+    for root in roots:
+        if not root:
+            continue
+        for _n in ('宿迁职业技术学院作息时间表.html', 'index.html'):
+            if os.path.exists(os.path.join(root, _n)):
+                return _n
     raise SystemExit('找不到页面文件：宿迁职业技术学院作息时间表.html 或 index.html（请在仓库根目录执行）')
 
 import http.server
