@@ -12,6 +12,11 @@ import os
 import re
 import sys
 
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 TEMPLATES = ('weekday', 'saturday', 'sunday', 'holiday')
 LINE_RE = re.compile(r'^\s*(\d{4}-\d{2}-\d{2})(?:\s*~\s*(\d{4}-\d{2}-\d{2}))?\s+(\w+)\s+(.+?)\s*$')
