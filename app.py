@@ -276,7 +276,11 @@ def fetch_program(deadline=None):
 def check_update():
     if not UPDATE_BASE:
         return None, None
+    deadline = time.time() + 15          # 页面热更新整体时间预算：超过就放弃本轮
     for base in base_candidates():
+        if time.time() > deadline:
+            api_log('页面更新检查超时，跳过本轮', 'warn')
+            break
         html, ver = _try_base(base)
         if html:
             return html, ver
