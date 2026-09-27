@@ -3,6 +3,8 @@
 #
 # 注意：node 不在 pip 里，需要另外装（nodejs.org 或系统包管理器）——
 #       check_page.py / verify_schedule.js 依赖它。
+#
+# 版本按本机验证过的组合锁定（2026-09-27）：生产打包用同一组，避免上游升级破坏发布闸门。
 
-websocket-client>=1.6      # functest_page.py：CDP 交互遍历走 WebSocket
-pywebview>=5              # app.py：桌面版外壳（selftest_api.py 会启动它）
+websocket-client==1.9.0   # functest_page.py：CDP 交互遍历走 WebSocket
+pywebview==6.2.1          # app.py：桌面版外壳（selftest_api.py 会启动它）
