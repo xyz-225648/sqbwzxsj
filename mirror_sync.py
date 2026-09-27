@@ -17,7 +17,7 @@ GITEE_TOKEN（Gitee 私人令牌）。没有配这个 secret 时，Gitee → Git
   python mirror_sync.py            真正的同步（Actions 里调用的就是它）
   python mirror_sync.py --selftest 只测「该往哪边推」的判定逻辑，不碰网络
 """
-import os, subprocess, sys
+import os, subprocess, sys, time
 
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -60,6 +60,20 @@ def git(*args, **kw):
     return run(['git'] + list(args), **kw)
 
 
+def git_retry(*args, tries=4, backoff=5):
+    """Gitee 网络不稳（SSL 超时/连接重置）时重试：4 次，间隔 5/10/15 秒。"""
+    last = (1, '')
+    for i in range(tries):
+        rc, out = git(*args)
+        if rc == 0:
+            return rc, out
+        last = (rc, out)
+        if i < tries - 1:
+            print('  · 第 %d 次失败，%d 秒后重试：%s' % (i + 1, backoff * (i + 1), out.strip()[-160:]), flush=True)
+            time.sleep(backoff * (i + 1))
+    return last
+
+
 def sha_of(ref):
     rc, out = git('rev-parse', ref)
     return out.strip() if rc == 0 else None
@@ -85,10 +99,10 @@ def main():
 
     # 只关心 master 这一条线的同步（其它分支/tag 用 --mirror 一次带过去）
     git('remote', 'add', 'gitee', GITEE_URL)
-    rc, out = git('fetch', '--prune', 'gitee',
-                  '+refs/heads/*:refs/remotes/gitee/*', '+refs/tags/*:refs/tags/*')
+    rc, out = git_retry('fetch', '--prune', 'gitee',
+                        '+refs/heads/*:refs/remotes/gitee/*', '+refs/tags/*:refs/tags/*')
     if rc != 0:
-        say('拉取 Gitee 失败：' + out.strip()[-400:])
+        say('拉取 Gitee 失败（重试后仍失败）：' + out.strip()[-400:])
         return 1
     rc, out = git('fetch', '--prune', 'origin')
     if rc != 0:
@@ -99,8 +113,8 @@ def main():
     # 「GitHub 上的改动可以推回 Gitee」这条路是通的（日志里能直接看到）
     gp = gitee_push_url()
     if gp:
-        rc, out = git('push', '--dry-run', gp,
-                      'refs/remotes/gitee/%s:refs/heads/%s' % (BRANCH, BRANCH))
+        rc, out = git_retry('push', '--dry-run', gp,
+                            'refs/remotes/gitee/%s:refs/heads/%s' % (BRANCH, BRANCH))
         say('%s Gitee 令牌自检（dry-run 推送）：%s'
             % ('✓' if rc == 0 else '✗', '通过' if rc == 0 else out.strip()[-200:]))
     else:
@@ -144,7 +158,7 @@ def main():
         ok = True
         gp = gitee_push_url()
         if gp:
-            rc, out = git('push', gp, 'refs/heads/mirror-merge:refs/heads/' + BRANCH)
+            rc, out = git_retry('push', gp, 'refs/heads/mirror-merge:refs/heads/' + BRANCH)
             say('推回 Gitee：%s' % ('成功' if rc == 0 else '失败 ' + out.strip()[-200:]))
             ok = ok and rc == 0
         else:
@@ -159,9 +173,9 @@ def main():
         if not gp:
             say('· GitHub 领先，但没有 GITEE_TOKEN，推不过去（请在仓库 Settings → Secrets 里配好）')
             return 1
-        rc, out = git('push', gp, 'refs/remotes/origin/%s:refs/heads/%s' % (BRANCH, BRANCH))
+        rc, out = git_retry('push', gp, 'refs/remotes/origin/%s:refs/heads/%s' % (BRANCH, BRANCH))
         say('GitHub → Gitee：%s' % ('成功' if rc == 0 else '失败 ' + out.strip()[-300:]))
-        git('push', gp, '--tags')
+        git_retry('push', gp, '--tags')
         return 0 if rc == 0 else 1
 
     rc, out = git('push', 'origin', 'refs/remotes/gitee/%s:refs/heads/%s' % (BRANCH, BRANCH))

@@ -133,6 +133,7 @@ if (/Android/i.test(navigator.userAgent || '')) document.documentElement.setAttr
   .nowitem .cd.next{color:#1d4ed8}     /* 课间/午休/晚休：还有多久上课 */
   .nowitem .cd.prep{color:#64748b}     /* 晚自习结束到关寝之间 */
   .daynote{flex:1 1 100%;font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:6px 10px}
+  .holiday-cd{flex:1 1 100%;font-size:12px;font-weight:700;color:#065f46;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:6px 10px}
 
   /* ---------- 甘特总览 ---------- */
   .gantt{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 18px 16px;box-shadow:0 3px 14px rgba(15,23,42,.06)}
@@ -549,6 +550,21 @@ function applyCalendar(text){
   } catch(e){}
   return CAL_META;
 }
+function holidayCountdown(d){
+  /* 从校历表直接推「距放假还有几天」：找今天起最近的 holiday 日（含今天），
+     零额外数据维护。没配校历或没有 future 假期就返回 null。 */
+  try{
+    var keys = Object.keys(SPECIAL || {}).filter(function(k){ return SPECIAL[k] === 'holiday'; }).sort();
+    if (!keys.length) return null;
+    var today = calKey(d);
+    var next = keys.find(function(k){ return k >= today; }) || keys[keys.length - 1];
+    var target = new Date(next + 'T00:00:00');
+    if (isNaN(target)) return null;
+    var days = Math.round((target - new Date(today + 'T00:00:00')) / 86400000);
+    var note = (typeof SPECIAL_NOTE === 'object' && SPECIAL_NOTE) ? (SPECIAL_NOTE[next] || '') : '';
+    return { days: days, date: next, note: note };
+  }catch(e){ return null; }
+}
 function todayOverride(){
   try { var v = safeGet('sqzy-today') || 'auto'; return (v === 'auto') ? '' : v; } catch(e){ return ''; }
 }
@@ -890,6 +906,13 @@ function renderNow(){
       ? ('今日是' + ['周日','周一','周二','周三','周四','周五','周六'][d.getDay()] + ' · ' + _spNote)
       : sched.label;
     html += '<div class="daynote">今日：' + _dn + '，请以学校实际安排为准。</div>';
+  }
+  var _hc = holidayCountdown(d);
+  if (_hc){
+    html += '<div class="holiday-cd">'
+          + (_hc.days === 0 ? '今天放假' : '距离放假还有 ' + _hc.days + ' 天')
+          + ' · ' + _hc.date.slice(5)
+          + (_hc.note ? '（' + _hc.note + '）' : '') + '</div>';
   }
   document.getElementById('nowBar').innerHTML = html;
 
@@ -1839,6 +1862,42 @@ function saveBlob(blob, name){
   document.body.appendChild(a); a.click();
   setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 4000);
 }
+function icsStamp(d){
+  return d.getFullYear() + ('0' + (d.getMonth() + 1)).slice(-2) + ('0' + d.getDate()).slice(-2);
+}
+function icsTime(d, hm){
+  var p = String(hm || '0:00').split(':');
+  return icsStamp(d) + 'T' + ('0' + p[0]).slice(-2) + ('0' + (p[1] || '0')).slice(-2) + '00';
+}
+function exportIcs(){
+  /* 把今天四学院的上课/晚休/关寝导出成 .ics，导入手机/桌面日历即可（休息段不导） */
+  var d = new Date(), stamp = icsStamp(d);
+  var lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//SQZY//作息时间表//CN', 'CALSCALE:GREGORIAN'];
+  TRACKS.forEach(function(t, i){
+    (SEGS[i] || []).forEach(function(g, j){
+      if (g.cat === 'free' || g.cat === 'gap') return;
+      lines.push('BEGIN:VEVENT');
+      lines.push('UID:sqzy-' + stamp + '-' + i + '-' + j);
+      lines.push('DTSTAMP:' + stamp + 'T000000');
+      lines.push('DTSTART;TZID=Asia/Shanghai:' + icsTime(d, fmt(g.s)));
+      lines.push('DTEND;TZID=Asia/Shanghai:' + icsTime(d, fmt(g.e)));
+      lines.push('SUMMARY:' + t.name + ' ' + (MID[g.label] || g.label));
+      lines.push('END:VEVENT');
+    });
+    var closeMin = toMin(t.close);
+    lines.push('BEGIN:VEVENT');
+    lines.push('UID:sqzy-' + stamp + '-' + i + '-close');
+    lines.push('DTSTAMP:' + stamp + 'T000000');
+    lines.push('DTSTART;TZID=Asia/Shanghai:' + icsTime(d, fmt(closeMin)));
+    lines.push('DTEND;TZID=Asia/Shanghai:' + icsTime(d, fmt(Math.min(closeMin + 5, 1439))));
+    lines.push('SUMMARY:' + t.name + ' 关寝');
+    lines.push('END:VEVENT');
+  });
+  lines.push('END:VCALENDAR');
+  saveBlob(new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' }),
+           '宿迁职业技术学院作息时间表-' + stamp + '.ics');
+  inPageToast('已导出 .ics', '用手机/桌面日历 App 打开导入即可（休息段不导，避免日历刷屏）');
+}
 function fetchApkByMirror(info, i, cb){
   var list = apkMirrors(info);
   if (i >= list.length){ cb(false); return; }
@@ -2251,6 +2310,7 @@ function initSettings(){
             '</div>' +
             '<button class="settest" id="aboutCheck" type="button" style="width:auto;margin:0;white-space:nowrap">检查更新</button>' +
           '</div>' +
+          '<button class="settest" id="setIcs" type="button" style="margin-top:8px">导出今日作息到日历（.ics）</button>' +
           '<div class="setnote" id="aboutNote"></div>' +
           '<div class="setnote" id="aboutShell"></div>' +
           '<button class="settest" id="aboutDownload" type="button" style="display:none">去下载程序本体新版</button>' +
@@ -2377,6 +2437,8 @@ function initSettings(){
   });
   var aboutBtn = document.getElementById('aboutCheck');
   if (aboutBtn) aboutBtn.addEventListener('click', function(){ checkAppUpdate(true); });
+  var icsBtn = document.getElementById('setIcs');
+  if (icsBtn) icsBtn.addEventListener('click', exportIcs);
   function sendTestNotify(){
     var d = new Date(), m = d.getHours() * 60 + d.getMinutes();
     var i = notifyCfg.tracks.indexOf(true); if (i < 0) i = 0;
