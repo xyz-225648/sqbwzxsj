@@ -1,0 +1,48 @@
+name: 发布闸门（PR 门禁）
+
+# 在 GitHub 的 PR 上自动跑本地 publish.py 的核心闸门（Windows 环境）：
+# 逻辑断言 → 页面语法 → 渲染冒烟 → 交互遍历 → 单元测试 → 校历校验。
+# 说明：桌面外壳端到端（functest_app / selftest_api 开真窗口）留在本地发布前跑，
+# CI 只跑能稳定在 runner 上运行的纯逻辑/无头浏览器闸门。
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 逻辑断言（30 条）
+        run: node verify_schedule.js
+
+      - name: 特殊日表格式校验
+        run: python check_calendar.py
+
+      - name: 页面语法自检
+        run: python check_page.py index.html
+
+      - name: 渲染冒烟测试
+        run: python smoke_page.py index.html
+
+      - name: 交互遍历测试（86 项）
+        run: python functest_page.py index.html
+
+      - name: 更新解析单元测试
+        run: python test_update_common.py
