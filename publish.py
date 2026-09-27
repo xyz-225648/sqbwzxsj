@@ -59,6 +59,7 @@ def main():
     html = page_file()
 
     run_gate('逻辑断言（周六/周日/放假/优先级）', ['node', 'verify_schedule.js'])
+    run_gate('特殊日表格式校验', [sys.executable, 'check_calendar.py'])
     run_gate('页面语法自检', [sys.executable, 'check_page.py', html])
     run_gate('渲染冒烟测试（无头浏览器）', [sys.executable, 'smoke_page.py', html])
     run_gate('交互遍历测试（无头浏览器 + CDP）', [sys.executable, 'functest_page.py', html])
