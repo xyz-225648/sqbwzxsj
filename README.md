@@ -13,7 +13,7 @@
 |---|---|---|
 | **Windows** | 宿迁职业技术学院作息时间表.exe | 双击即用，免安装（需 WebView2，Win11 自带；老系统会弹下载提示） |
 | **安卓手机** | 宿迁职业技术学院作息时间表.apk | 允许「安装未知来源应用」后安装，覆盖安装不丢数据 |
-| **浏览器** | index.html | 任意浏览器直接打开；在线看用 [jsDelivr](https://cdn.jsdelivr.net/gh/xyz-225648/sqbwzxsj@master/index.html) |
+| **浏览器** | index.html | 任意浏览器直接打开；在线看 / iPhone 添加到主屏幕用 [GitHub Pages](https://xyz-225648.github.io/sqbwzxsj/) |
 
 > 手机用户优先用页面里的「**一键下载安装包**」：应用内走系统下载器、浏览器走镜像线路，
 > 两条路都会存成真正的 `.apk`。只有直接在 gitee 发行版页面点附件时才可能变成 `.apk.zip`
