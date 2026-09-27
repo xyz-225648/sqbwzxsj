@@ -39,3 +39,17 @@ jobs:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           FORCE_FROM_GITEE: ${{ inputs.force_from_gitee && '1' || '' }}
         run: python mirror_sync.py
+
+  releases:
+    # 同步完代码后，把 GitHub 发行版也对齐（从 CHANGELOG 取说明，附件本地没有就从 Gitee 下载）
+    needs: sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 同步 GitHub 发行版
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python gh_release.py sync
