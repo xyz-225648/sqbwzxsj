@@ -72,6 +72,12 @@ UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/'
 RELEASE_DL = 'https://gitee.com/xyz-225648/sqbwzxsj/releases/download/'
 API_PAGE = 'https://gitee.com/api/v5/repos/xyz-225648/sqbwzxsj/contents/index.html?ref=master'
 FETCH_TIMEOUT = 8
+UPDATE_FIRST_DELAY = 60          # 启动后首次热更新检查延迟（秒）
+UPDATE_POLL_INTERVAL = 300       # 运行中热更新轮询间隔（秒）
+WINDOW_WIDTH = 1120
+WINDOW_HEIGHT = 880
+LOG_MAX_BYTES = 5 * 1024 * 1024  # api.log 轮转阈值
+LOG_BACKUP_COUNT = 3
 
 
 # ==================== 基础工具 ====================
@@ -140,7 +146,7 @@ _LOG = logging.getLogger('sqbwzxsj')
 _LOG.setLevel(logging.INFO)
 if not _LOG.handlers:
     _fh = RotatingFileHandler(os.path.join(cache_dir(), 'api.log'),
-                              maxBytes=5 * 1024 * 1024, backupCount=3, encoding='utf-8')
+                              maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT, encoding='utf-8')
     _fh.setFormatter(logging.Formatter('%(asctime)s [%(levelname)-5s] %(funcName)s:%(lineno)d - %(message)s',
                                        datefmt='%H:%M:%S'))
     _LOG.addHandler(_fh)
@@ -313,13 +319,13 @@ def silent_update(window):
 
 def silent_update_loop(window):
     """运行期间也持续检查版本：不用重新打开软件，检测到新版页面就自动重载窗口。"""
-    time.sleep(60)                       # 启动后先等一分钟，别跟首屏抢资源
+    time.sleep(UPDATE_FIRST_DELAY)          # 启动后先等一会儿，别跟首屏抢资源
     while True:
         try:
             silent_update(window)
         except Exception as exc:
             api_log('热更新循环出错 %r' % (exc,), 'warn')
-        time.sleep(300)                   # 每 5 分钟查一次
+        time.sleep(UPDATE_POLL_INTERVAL)
 
 
 # ==================== Windows 原生通知 ====================
@@ -479,6 +485,8 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
             # 不发 Access-Control-Allow-Origin：页面与接口本来就同源，不需要它；
             # 发 * 等于允许任何网站读走本地接口的响应（多余暴露）。
             self.send_header('Cache-Control', 'no-store')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.send_header('X-Frame-Options', 'DENY')
             self.send_header('Content-Length', str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -533,6 +541,8 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header('Content-Type', 'text/html; charset=utf-8')
                 self.send_header('Cache-Control', 'no-store')
+                self.send_header('X-Content-Type-Options', 'nosniff')
+                self.send_header('X-Frame-Options', 'DENY')
                 self.send_header('Content-Length', str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
@@ -1317,7 +1327,7 @@ def run_window(html):
         _PORT[0] = 0
         port = 0
 
-    opts = dict(width=1120, height=880, min_size=(340, 560), resizable=True,
+    opts = dict(width=WINDOW_WIDTH, height=WINDOW_HEIGHT, min_size=(340, 560), resizable=True,
                 text_select=False, confirm_close=False, background_color='#f1f5f9')
     if port:
         # 有助手进程就让它把页面用 http 发出来（真实 origin → localStorage 可用）
