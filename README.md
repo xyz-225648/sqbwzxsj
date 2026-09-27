@@ -67,7 +67,7 @@
 - 手机版不显示「置顶 / 切换横竖版」这类只对桌面有意义的按钮
 - **装包不会被改名**：gitee 附件 CDN 对 `.apk` 固定返回 `application/zip`（实测改不了），
   手机浏览器会按 MIME 把它存成 `.apk.zip`。所以 apk 另外以**仓库文件**提交一份
-  （`apk/sqzy-timetable-<tag>.apk`），页面在浏览器里走 jsdelivr / ghproxy 这些带 CORS 的代理
+  （`apk/sqzy-timetable-<tag>.apk`），页面在浏览器里走 jsDelivr 等带 CORS 的镜像线路
   `fetch` 成 blob 后自己指定文件名保存；应用内则走系统 DownloadManager —— 两条路都存成 `.apk`。
   镜像线路全不通时才回退 gitee 附件，并提示把后缀改回来。
 - **分享安装包**：设置里可以把本机这份 apk 直接发给同学（微信 / QQ / 蓝牙）
@@ -179,7 +179,7 @@ python backup_build.py
 | version.txt | 版本标记，内容变了才触发更新 |
 | app.py | Windows 桌面版源码（pywebview + WebView2） |
 | publish.py | 一键发布：先过全部自检（逻辑断言 / 语法 / 渲染冒烟 / 交互遍历 / 接口），再生成 release/ 里的三个文件（`publish.sh` 只是转发到它，Windows 上没有 bash 也能发） |
-| make_program_txt.py | 生成 program.txt：程序本体版本（读 app.py 的 `SHELL_VERSION` 与安卓 `versionName`，与页面版本分开算）、直链、sha256、字节数，以及 apk 的仓库镜像路径 / 代理 CDN 线路 |
+| make_program_txt.py | 生成 program.txt：程序本体版本（读 app.py 的 `SHELL_VERSION` 与安卓 `versionName`，与页面版本分开算）、直链、sha256、字节数，以及 apk 的仓库镜像路径 / CDN 线路 |
 | apk/sqzy-timetable-<tag>.apk | 每个版本提交一份 apk 副本：给「浏览器也要存成 .apk」用的镜像源（约 120 KB/版） |
 | set-update-url.sh | 给二次开发者用：改自动更新地址并重新打包 |
 | check_live.py | 发布之后核验线上：网页、版本号、两个下载链接跟本地是否一致 |
@@ -216,7 +216,7 @@ python functest_app.py --exe 宿迁职业技术学院作息时间表.exe   # 测
 
 gitee 附件的 CDN 对 `.apk` 固定返回 `Content-Type: application/zip`（实测：同一发行版的 `.exe` 却是
 `application/vnd.microsoft.portable-executable`；上传时指定 Content-Type 也没用），手机浏览器会按 MIME
-补后缀。**页面里的下载按钮已经绕开了它**：浏览器里走 jsdelivr / ghproxy 这些带 CORS 的代理，页面拿到字节后
+补后缀。**页面里的下载按钮已经绕开了它**：浏览器里走 jsDelivr 等带 CORS 的镜像线路，页面拿到字节后
 自己命名保存，所以一定是 `.apk`；应用内则走系统下载器（显式文件名）。只有直接在 gitee 发行版页面点附件时
 才会碰上，把结尾的 `.zip` 去掉就能装 —— 文件本身是完整的。
 
@@ -240,9 +240,9 @@ Windows：第一次发通知时会注册 `sqzy:` 协议；若被安全软件拦�
 **校园网 / 内网下更新和下载会不会不通？**
 
 应用内下载走系统下载器**直连码云**，不受影响；受影响的只有**浏览器**路径 —— 网页版读版本走 GitHub 镜像
-（`raw.githubusercontent.com` 带 CORS 头），apk 下载走 6 条线路依次降级：`@<tag>`×3 → `@master`×2 → ghproxy，
+（`raw.githubusercontent.com` 带 CORS 头），apk 下载走多条镜像线路依次降级（jsDelivr 的 tag / master 等），
 每条都核对 `program.txt` 里的 sha256，全不通才回退到码云附件（并提示把 `.zip` 后缀改回 `.apk`）。
-校园网下最稳的做法就是在**应用内点「一键下载安装包」**；另外镜像每 6 小时同步一次，刚发布的版本网页版最多滞后 6 小时。
+校园网下最稳的做法就是在**应用内点「一键下载安装包」**；另外镜像每 30 分钟同步一次，刚发布的版本网页版最多滞后 30 分钟。
 
 **为什么仓库里要放一份 apk 副本？**
 
