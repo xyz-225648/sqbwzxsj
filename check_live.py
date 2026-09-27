@@ -134,6 +134,11 @@ if mp:
         'program.txt 的 tag 与 exe/apk 版本一致（%s）' % prog.get('tag'))
     if prog.get('tag'):
         prog_tag = prog.get('tag')
+    # README 顶部的「程序本体」版本也要跟 program.txt 的 tag 对齐（页面版本单独一行已经验过）
+    _readme_shell = re.search(r'程序本体：\*\*(v[0-9.]+)\*\*', open('README.md', encoding='utf-8').read())
+    say(not _readme_shell or _readme_shell.group(1) == prog.get('tag', ''),
+        'README 程序本体 %s == program.txt tag %s'
+        % ((_readme_shell.group(1) if _readme_shell else '没写'), prog.get('tag')))
 else:
     say(False, '线上 program.txt 解析不出 JSON')
 for label, ext in (('安卓安装包', 'apk'), ('Windows 程序', 'exe')):
