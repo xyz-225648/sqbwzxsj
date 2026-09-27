@@ -1870,42 +1870,6 @@ function saveBlob(blob, name){
   document.body.appendChild(a); a.click();
   setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 4000);
 }
-function icsStamp(d){
-  return d.getFullYear() + ('0' + (d.getMonth() + 1)).slice(-2) + ('0' + d.getDate()).slice(-2);
-}
-function icsTime(d, hm){
-  var p = String(hm || '0:00').split(':');
-  return icsStamp(d) + 'T' + ('0' + p[0]).slice(-2) + ('0' + (p[1] || '0')).slice(-2) + '00';
-}
-function exportIcs(){
-  /* 把今天四学院的上课/晚休/关寝导出成 .ics，导入手机/桌面日历即可（休息段不导） */
-  var d = new Date(), stamp = icsStamp(d);
-  var lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//SQZY//作息时间表//CN', 'CALSCALE:GREGORIAN'];
-  TRACKS.forEach(function(t, i){
-    (SEGS[i] || []).forEach(function(g, j){
-      if (g.cat === 'free' || g.cat === 'gap') return;
-      lines.push('BEGIN:VEVENT');
-      lines.push('UID:sqzy-' + stamp + '-' + i + '-' + j);
-      lines.push('DTSTAMP:' + stamp + 'T000000');
-      lines.push('DTSTART;TZID=Asia/Shanghai:' + icsTime(d, fmt(g.s)));
-      lines.push('DTEND;TZID=Asia/Shanghai:' + icsTime(d, fmt(g.e)));
-      lines.push('SUMMARY:' + t.name + ' ' + (MID[g.label] || g.label));
-      lines.push('END:VEVENT');
-    });
-    var closeMin = toMin(t.close);
-    lines.push('BEGIN:VEVENT');
-    lines.push('UID:sqzy-' + stamp + '-' + i + '-close');
-    lines.push('DTSTAMP:' + stamp + 'T000000');
-    lines.push('DTSTART;TZID=Asia/Shanghai:' + icsTime(d, fmt(closeMin)));
-    lines.push('DTEND;TZID=Asia/Shanghai:' + icsTime(d, fmt(Math.min(closeMin + 5, 1439))));
-    lines.push('SUMMARY:' + t.name + ' 关寝');
-    lines.push('END:VEVENT');
-  });
-  lines.push('END:VCALENDAR');
-  saveBlob(new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' }),
-           '宿迁职业技术学院作息时间表-' + stamp + '.ics');
-  inPageToast('已导出 .ics', '用手机/桌面日历 App 打开导入即可（休息段不导，避免日历刷屏）');
-}
 function fetchApkByMirror(info, i, cb){
   var list = apkMirrors(info);
   if (i >= list.length){ cb(false); return; }
@@ -2318,7 +2282,6 @@ function initSettings(){
             '</div>' +
             '<button class="settest" id="aboutCheck" type="button" style="width:auto;margin:0;white-space:nowrap">检查更新</button>' +
           '</div>' +
-          '<button class="settest" id="setIcs" type="button" style="margin-top:8px">导出今日作息到日历（.ics）</button>' +
           '<div class="setnote" id="aboutNote"></div>' +
           '<div class="setnote" id="aboutShell"></div>' +
           '<button class="settest" id="aboutDownload" type="button" style="display:none">去下载程序本体新版</button>' +
@@ -2445,8 +2408,6 @@ function initSettings(){
   });
   var aboutBtn = document.getElementById('aboutCheck');
   if (aboutBtn) aboutBtn.addEventListener('click', function(){ checkAppUpdate(true); });
-  var icsBtn = document.getElementById('setIcs');
-  if (icsBtn) icsBtn.addEventListener('click', exportIcs);
   function sendTestNotify(){
     var d = new Date(), m = d.getHours() * 60 + d.getMinutes();
     var i = notifyCfg.tracks.indexOf(true); if (i < 0) i = 0;
