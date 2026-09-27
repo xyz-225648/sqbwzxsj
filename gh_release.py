@@ -1,25 +1,53 @@
 # -*- coding: utf-8 -*-
-"""GitHub 发行版（Releases）镜像：从 CHANGELOG.md 取说明，上传 exe/apk/截图附件。
+"""GitHub 发行版（Releases）同步：从 CHANGELOG.md 取说明，上传 exe/apk/截图附件。
 
 用法:
-  python gh_release.py sync     建/更新 v1.0、v2.0.1、v2.1.0，并给最新版上传附件
+  python gh_release.py sync     建/更新全部发行版，并给最新版上传附件
   python gh_release.py list     列出 GitHub 上的发行版与附件
-令牌: 环境变量 GITHUB_TOKEN，或同目录下的 .github_token
+令牌: 环境变量 GITHUB_TOKEN（GitHub Actions 里自动有），或同目录下的 .github_token
+附件来源: 本地有就用本地；本地没有（Actions 环境）就从 Gitee 发行版下载。
 """
-import base64, io, json, mimetypes, os, sys, time, urllib.error, urllib.parse, urllib.request
+import base64, io, json, mimetypes, os, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
 
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-TOK = io.open('.github_token', encoding='utf-8').read().strip()
+TOK = (os.environ.get('GITHUB_TOKEN') or '').strip() \
+    or io.open('.github_token', encoding='utf-8').read().strip()
 OWNER, REPO = 'xyz-225648', 'sqbwzxsj'
-TAGS = ['v1.0', 'v2.0.1', 'v2.1.0', 'v2.1.1', 'v2.1.2', 'v2.1.3', 'v2.2.0', 'v2.2.1', 'v2.2.2', 'v2.3.0', 'v2.3.1', 'v2.3.2', 'v2.3.3', 'v2.3.4', 'v2.3.5', 'v2.3.6', 'v2.3.7', 'v2.3.8', 'v2.3.9', 'v2.3.10', 'v2.3.11', 'v2.3.12', 'v2.3.13', 'v2.3.14', 'v2.3.15']   # 最后一个当"最新版"，附件挂在它上面
+TAGS = ['v1.0', 'v2.0.1', 'v2.1.0', 'v2.1.1', 'v2.1.2', 'v2.1.3', 'v2.2.0', 'v2.2.1', 'v2.2.2', 'v2.3.0', 'v2.3.1', 'v2.3.2', 'v2.3.3', 'v2.3.4', 'v2.3.5', 'v2.3.6', 'v2.3.7', 'v2.3.8', 'v2.3.9', 'v2.3.10', 'v2.3.11', 'v2.3.12', 'v2.3.13', 'v2.3.14', 'v2.3.15', 'v2.4.1', 'v2.4.2', 'v2.4.3']   # 最后一个当"最新版"，附件挂在它上面
 LATEST = TAGS[-1]
 # 附件名用 ASCII：GitHub 会把非 ASCII 名字削成 default.exe / -.png（踩过）
-ASSETS = [('宿迁职业技术学院作息时间表.exe', 'sqzy-timetable-v2.3.15-windows.exe'),
-          ('宿迁职业技术学院作息时间表.apk', 'sqzy-timetable-v2.3.15-android.apk'),
-          ('宿迁职业技术学院作息时间表.png', 'sqzy-timetable-desktop.png'),
-          ('宿迁职业技术学院作息时间表-手机版.png', 'sqzy-timetable-mobile.png')]
-NOTE = ('> 本仓库是 [Gitee 主仓库](https://gitee.com/xyz-225648/sqbwzxsj) 的镜像，'
-        '两边双向同步；产品改动在 Gitee 走 PR，这里也能提，合并后会同步回去。' + chr(10) * 2)
+ASSETS = [
+    ('宿迁职业技术学院作息时间表.exe', 'sqzy-timetable-%s-windows.exe' % LATEST,
+     'https://gitee.com/xyz-225648/sqbwzxsj/releases/download/%s/%%E5%%AE%%BF%%E8%%BF%%81%%E8%%81%%8C%%E4%%B8%%9A%%E6%%8A%%80%%E6%%9C%%AF%%E5%%AD%%A6%%E9%%99%%A2%%E4%%BD%%9C%%E6%%81%%AF%%E6%%97%%B6%%E9%%97%%B4%%E8%%A1%%A8.exe' % LATEST),
+    ('宿迁职业技术学院作息时间表.apk', 'sqzy-timetable-%s-android.apk' % LATEST,
+     'https://gitee.com/xyz-225648/sqbwzxsj/releases/download/%s/%%E5%%AE%%BF%%E8%%BF%%81%%E8%%81%%8C%%E4%%B8%%9A%%E6%%8A%%80%%E6%%9C%%AF%%E5%%AD%%A6%%E9%%99%%A2%%E4%%BD%%9C%%E6%%81%%AF%%E6%%97%%B6%%E9%%97%%B4%%E8%%A1%%A8.apk' % LATEST),
+    ('宿迁职业技术学院作息时间表.png', 'sqzy-timetable-desktop.png', None),
+    ('宿迁职业技术学院作息时间表-手机版.png', 'sqzy-timetable-mobile.png', None)]
+NOTE = ('> 本仓库是**主仓库**（开发、PR、发行都在这里）；'
+        '[Gitee 仓库](https://gitee.com/xyz-225648/sqbwzxsj) 是镜像，两边双向同步。' + chr(10) * 2)
+
+
+def asset_file(local, url):
+    """本地有就直接用；没有（GitHub Actions 环境）就从 Gitee 下载到临时目录。"""
+    if os.path.exists(local):
+        return local
+    if not url:
+        return None
+    tmp = os.path.join(tempfile.gettempdir(), os.path.basename(local))
+    if os.path.exists(tmp):
+        return tmp
+    print('    · 本地没有 %s，从 Gitee 下载…' % os.path.basename(local))
+    try:
+        with urllib.request.urlopen(urllib.parse.unquote(url), timeout=600) as r, open(tmp, 'wb') as f:
+            while True:
+                chunk = r.read(1 << 16)
+                if not chunk:
+                    break
+                f.write(chunk)
+        return tmp
+    except Exception as exc:
+        print('    ✗ 下载失败 %r' % exc)
+        return None
 
 
 def api(method, path, payload=None, timeout=120):
@@ -112,11 +140,12 @@ def cmd_sync():
             bad += 1
             continue
         if tag == LATEST:
-            for path, label in ASSETS:
-                if not os.path.exists(path):
-                    print('    · 本地没有 %s，跳过' % path)
+            for path, label, url in ASSETS:
+                src = asset_file(path, url)
+                if not src:
+                    print('    · 拿不到 %s，跳过' % label)
                     continue
-                if not upload_asset(rel['id'], path, label):
+                if not upload_asset(rel['id'], src, label):
                     bad += 1
     return 1 if bad else 0
 
