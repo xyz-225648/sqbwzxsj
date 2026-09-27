@@ -24,7 +24,8 @@
 
 ## 下载使用
 
-到 [发行版页面](https://gitee.com/xyz-225648/sqbwzxsj/releases) 下载（链接永远指向最新版）：
+到 [GitHub 发行版页面](https://github.com/xyz-225648/sqbwzxsj/releases) 下载（主仓库，链接永远指向最新版）；
+国内网络慢时可用 [Gitee 发行版](https://gitee.com/xyz-225648/sqbwzxsj/releases)（镜像，同样有最新附件）。
 
 | 平台 | 文件 | 说明 |
 |---|---|---|
@@ -275,10 +276,12 @@ Windows：第一次发通知时会注册 `sqzy:` 协议；若被安全软件拦�
 
 ## 开发流程（issue → 分支 → Pull Request → 合并）
 
-改这个仓库的代码一律走 Pull Request，不直接推 master，改动可追溯、可回滚：
+改这个仓库的代码一律走 Pull Request，不直接推 master，改动可追溯、可回滚。
+**主入口是 GitHub**（网页/客户端正常开分支提 PR）；没有 GitHub 网络环境时也可以用下面的
+`gitee_repo.py` 在 Gitee 侧走同一套流程，合并后由同步工作流带回 GitHub：
 
-1. **提 issue**：说清问题或想要的功能（仓库菜单「Issues → 新建」）。
-2. **开分支**：`python gitee_repo.py branch new fix/xxx`
+1. **提 issue**：说清问题或想要的功能（GitHub「Issues → 新建」）。
+2. **开分支**：GitHub 网页或 `git checkout -b fix/xxx`；Gitee 侧 `python gitee_repo.py branch new fix/xxx`。
 3. **改代码 + 过闸门**：本地跑 `python publish.py`（或 `bash publish.sh`）—— 作息逻辑断言 /
    页面语法 / 渲染冒烟 / 交互遍历 / 本地接口五项全过才允许提交；桌面外壳改动另外跑 `python functest_app.py`。
 4. **提交 PR**：`python gitee_repo.py --branch=fix/xxx push <改动文件>` 把改动提上分支，
@@ -330,9 +333,10 @@ Windows：第一次发通知时会注册 `sqzy:` 协议；若被安全软件拦�
 - **发版后必须同步更新 README**：顶部「当前版本」要立刻改成新号，这一条已经进闸门 ——
   `check_live.py` 会读本地 README 的版本行，和页面 `APP_VERSION` 对不上就判 FAIL（漏更新会被挡住，不靠记性）
 - 发布也走 PR：见下面「开发流程 → 发布也走 PR」
-## GitHub 镜像
+## GitHub 主仓库与 Gitee 镜像
 
-同一份仓库在 GitHub 上也有一份：https://github.com/xyz-225648/sqbwzxsj
+**主仓库在 GitHub**：https://github.com/xyz-225648/sqbwzxsj
+**Gitee 是镜像**：https://gitee.com/xyz-225648/sqbwzxsj（国内访问快，自动更新直链仍走 Gitee）
 
 两边**双向同步**，谁领先就推给谁，规则写死在 `.github/workflows/mirror-sync.yml` 里：
 
@@ -343,22 +347,21 @@ Windows：第一次发通知时会注册 `sqzy:` 协议；若被安全软件拦�
 | Gitee 领先（在 Gitee 合并了 PR） | 推给 GitHub |
 | 两边各有新提交 | 先自动合并；**合不干净就报错停下，谁都不动** |
 
-- 触发时机：每 6 小时一次 / GitHub 上 push 到 master（合并 PR 后立刻）/ 也可以在工作流页面手动点
+- 触发时机：每 6 小时一次 / GitHub 上 push 到 master（合并 PR 后立刻）/ 也可以在工作流页面手动点「Run workflow」
 - 往 Gitee 推需要 GitHub 仓库里的 Actions secret `GITEE_TOKEN`（Gitee 私人令牌，勾 projects 权限）；没配的话只有 Gitee → GitHub 单向可用，反向那步会明确报错而不是假装成功
-- 主仓库仍然是 Gitee：产品改动按上面的「开发流程」在 Gitee 走 PR；在 GitHub 上开发也可以，合并后会由这个工作流推回 Gitee
+- 同步工作流顺带会跑 `gh_release.py`，把 GitHub 发行版对齐（说明取 CHANGELOG，exe/apk 附件本地没有就从 Gitee 发行版下载）
 - ⚠️ **别在 Gitee 侧改 `.github/workflows/mirror-sync.yml`**：Actions 自带的 `GITHUB_TOKEN` 没有 `workflow` 权限，
   只要 Gitee 的历史里存在改动这个文件的提交，镜像 push 就会被 GitHub 拒掉
   （`refusing to allow a GitHub App to create or update workflow ... without workflows permission`），
-  双向同步直接停摆 —— v2.2.0 发布时就踩了这一次（想把同步频率从 6 小时改成 30 分钟），
-  最后只能把该文件恢复成与 GitHub 完全一致才恢复同步。真要改这个文件，得两边用**带 `workflow` 权限**的令牌分别推。
+  双向同步直接停摆 —— v2.2.0 发布时就踩了这一次。真要改这个文件，得两边用**带 `workflow` 权限**的令牌分别推。
 ### 在 GitHub 上开发
 
-1. 照常在 GitHub 上开分支、提 PR（讨论、评审都留在 GitHub）
+1. 照常在 GitHub 上开分支、提 PR（讨论、评审都留在 GitHub，这是主入口）
 2. 合并进 master 后，同步工作流会自动跑一次，把这次改动推回 Gitee
 3. 如果同一时间 Gitee 那边也有新提交，工作流会先把两边的提交合并起来；
    **合不干净就直接报错停下**，两边都不会被覆盖，等人工处理
 
-> 两边都可以当开发入口，主仓库是 Gitee（自动更新、发行版、issue 都在那边）。
+> 开发、PR、发行版以 GitHub 为主；Gitee 保持可用作国内镜像与自动更新直链源。
 
 ## 许可
 
