@@ -38,7 +38,7 @@ def asset_file(local, url):
         return tmp
     print('    · 本地没有 %s，从 Gitee 下载…' % os.path.basename(local))
     try:
-        with urllib.request.urlopen(urllib.parse.unquote(url), timeout=600) as r, open(tmp, 'wb') as f:
+        with urllib.request.urlopen(url, timeout=600) as r, open(tmp, 'wb') as f:
             while True:
                 chunk = r.read(1 << 16)
                 if not chunk:
