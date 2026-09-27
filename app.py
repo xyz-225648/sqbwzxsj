@@ -35,6 +35,8 @@ def _page_file():
 
 import http.server
 import json
+import logging
+from logging.handlers import RotatingFileHandler
 import os
 import re
 import secrets
@@ -52,6 +54,10 @@ import urllib.request
 
 import webview
 
+from update_common import (
+    MIN_HTML, VALID_MARKERS, UA, ascii_safe_url, download_file,
+    is_valid_page, norm_ver, page_ver, parse_latest, parse_program)
+
 HTML_NAME = _page_file()
 APP_TITLE = '宿迁职业技术学院作息时间表'
 # 桌面壳自己的版本号（程序本体版本，与页面版本分开算）：
@@ -66,10 +72,6 @@ UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/'
 RELEASE_DL = 'https://gitee.com/xyz-225648/sqbwzxsj/releases/download/'
 API_PAGE = 'https://gitee.com/api/v5/repos/xyz-225648/sqbwzxsj/contents/index.html?ref=master'
 FETCH_TIMEOUT = 8
-UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-      '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
-VALID_MARKERS = ('宿迁职业技术学院作息时间表', '<html')
-MIN_HTML = 5000
 
 
 # ==================== 基础工具 ====================
@@ -112,19 +114,15 @@ def read_embedded():
         return f.read()
 
 
-def is_valid(html):
-    return bool(html) and len(html) >= MIN_HTML and all(m in html for m in VALID_MARKERS)
-
-
 def load_current_html():
     cached = read_text(os.path.join(cache_dir(), 'index.html'))
     emb = read_embedded()
-    if is_valid(cached):
+    if is_valid_page(cached):
         # 同版本但内容不同（比如线上还是旧页、本机是刚打包的新页）时以内置页为准，
         # 避免启动热更新把新页面“降级”回线上旧页。
-        if _page_ver(cached) > _page_ver(emb):
+        if page_ver(cached) > page_ver(emb):
             return cached
-        if _page_ver(cached) == _page_ver(emb) and hashlib.sha256(
+        if page_ver(cached) == page_ver(emb) and hashlib.sha256(
                 cached.encode('utf-8')).hexdigest() == hashlib.sha256(emb.encode('utf-8')).hexdigest():
             return cached
         return emb
@@ -138,18 +136,26 @@ def http_text(url, timeout=FETCH_TIMEOUT):
         return resp.read().decode('utf-8', 'replace')
 
 
+_LOG = logging.getLogger('sqbwzxsj')
+_LOG.setLevel(logging.INFO)
+if not _LOG.handlers:
+    _fh = RotatingFileHandler(os.path.join(cache_dir(), 'api.log'),
+                              maxBytes=5 * 1024 * 1024, backupCount=3, encoding='utf-8')
+    _fh.setFormatter(logging.Formatter('%(asctime)s [%(levelname)-5s] %(funcName)s:%(lineno)d - %(message)s',
+                                       datefmt='%H:%M:%S'))
+    _LOG.addHandler(_fh)
+
+
 def api_log(text, level='info'):
-    """分级日志：info / warn / error，带时间戳。网页侧看不到 exe 的运行情况，全靠它。"""
+    """分级日志：info / warn / error。走 logging + 轮转文件（api.log 最大 5MB，留 3 份备份）。"""
     try:
-        path = os.path.join(cache_dir(), 'api.log')
-        line = '%s [%-5s] %s' % (time.strftime('%H:%M:%S'), level, text)
-        with open(path, 'a', encoding='utf-8') as f:
-            f.write(line + chr(10))
-        if os.path.getsize(path) > 40000:
-            with open(path, 'r', encoding='utf-8') as f:
-                tail = f.readlines()[-200:]
-            with open(path, 'w', encoding='utf-8') as f:
-                f.writelines(tail)
+        {
+            'debug': _LOG.debug,
+            'info': _LOG.info,
+            'warn': _LOG.warning,
+            'warning': _LOG.warning,
+            'error': _LOG.error,
+        }.get(level, _LOG.info)(text)
     except Exception:
         pass
 
@@ -163,15 +169,6 @@ def base_candidates():
     elif '/main/' in b:
         out.append(b.replace('/main/', '/master/'))
     return out
-
-
-def version_of_latest(text):
-    """从 version.txt 的内容里取出版本号（window.SQZY_LATEST={"v": "v2.3.15", ...}）。"""
-    m = re.search(r'"v"\s*:\s*"(v?[0-9.]+)"', text or '')
-    if not m:
-        return ''
-    v = m.group(1)
-    return v if v.startswith('v') else 'v' + v
 
 
 def page_candidates(ver=''):
@@ -212,7 +209,7 @@ def fetch_page(ver=''):
         except Exception as exc:
             api_log('页面来源 %s 取不到：%r' % (kind, exc), 'warn')
             continue
-        if is_valid(html):
+        if is_valid_page(html):
             api_log('页面来源 %s 成功（%d 字节）' % (kind, len(html)))
             return html
         api_log('页面来源 %s 拿到了但校验没过（%d 字节）' % (kind, len(html or '')), 'warn')
@@ -225,15 +222,19 @@ def _try_base(base):
         remote_ver = lines[0].strip() if lines else ''
         if not remote_ver:
             return None, None
+        remote = parse_latest(remote_ver)      # 远程内容严格解析：格式坏了直接放弃本轮
+        if not remote:
+            api_log('线上 version.txt 解析不过，跳过本轮', 'warn')
+            return None, None
         local_ver = (read_text(os.path.join(cache_dir(), 'version.txt')) or '').strip()
         if remote_ver == local_ver:
             return None, None
         # 页面本体走来源链（raw 对大文件会 451；version.txt 很小，raw 依然好使）
-        html = fetch_page(version_of_latest(remote_ver))
-        if not is_valid(html):
+        html = fetch_page(remote['v'])
+        if not is_valid_page(html):
             return None, None
         # 只升不降：线上页面版本不比内置页新就不写缓存，避免把新打包的页面降级成旧页
-        if _page_ver(html) <= _page_ver(load_current_html()):
+        if page_ver(html) <= page_ver(load_current_html()):
             api_log('线上页面版本不新，跳过缓存覆盖', 'warn')
             return None, None
         write_text(os.path.join(cache_dir(), 'index.html'), html)
@@ -256,9 +257,10 @@ def fetch_program(deadline=None):
                 return None
             try:
                 txt = http_text(base + 'program.txt?t=%d' % int(time.time()), timeout=4)
-                m = re.search(r'\{.*\}', txt, re.S)
-                if m:
-                    return json.loads(m.group(0))
+                info = parse_program(txt)      # 严格解析：字段/域名/sha256 全校验
+                if info:
+                    return info
+                api_log('线上 program.txt 解析不过，第%d次跳过' % (attempt + 1), 'warn')
             except Exception as exc:
                 api_log('program 第%d次失败 %r' % (attempt + 1, exc), 'warn')
                 time.sleep(0.5)
@@ -287,16 +289,10 @@ def wait_window_ready(window, timeout=20.0):
     return False
 
 
-def _page_ver(html):
-    """页面里的 APP_VERSION 换算成可比较的数字（用于判断"新不新"）。"""
-    m = re.search(r"var APP_VERSION = 'v([0-9]+)\.([0-9]+)\.([0-9]+)'", html or '')
-    return (int(m.group(1)) * 10000 + int(m.group(2)) * 100 + int(m.group(3))) if m else -1
-
-
 def silent_update(window):
     html, ver = check_update()
     # 只在新版号更大时才替换：否则会把本地/新版页面降级成线上的旧页面（v2.3.0 测试时踩到）
-    if _page_ver(html) <= _page_ver(load_current_html()):
+    if page_ver(html) <= page_ver(load_current_html()):
         api_log('线上页面 %s 不比本地新，跳过替换' % ver)
         return
     if not html:
@@ -697,44 +693,6 @@ def write_settings(text):
 
 
 _UPDATE = {'path': None, 'version': ''}
-
-
-def ascii_safe_url(url):
-    """把 URL 里的非 ASCII 字符（比如中文资产名）转义掉再发请求。
-    urllib 构造请求行时只接受 ASCII，裸中文会抛 UnicodeEncodeError —— 这也是
-    v2.3.0 里『一键更新』下载失败的根因之一（program.txt 里的地址没转义）。"""
-    try:
-        url.encode('ascii')
-        return url
-    except Exception:
-        return urllib.parse.quote(url, safe=':/?&=%~#+[]@!$&()*,;')
-
-
-def download_file(url, dest, sha256=None):
-    """下载到临时目录并校验 sha256；返回 (ok, 说明)"""
-    url = ascii_safe_url(url)
-    try:
-        req = urllib.request.Request(url, headers={'User-Agent': UA})
-        with urllib.request.urlopen(req, timeout=120) as r, open(dest, 'wb') as f:
-            while True:
-                chunk = r.read(1 << 16)
-                if not chunk:
-                    break
-                f.write(chunk)
-        size = os.path.getsize(dest)
-        if size < 100000:                     # exe 至少十几 MB，太小肯定不对
-            return False, '文件太小（%d 字节）' % size
-        if sha256:
-            import hashlib
-            h = hashlib.sha256()
-            with open(dest, 'rb') as f:
-                for chunk in iter(lambda: f.read(1 << 20), b''):
-                    h.update(chunk)
-            if h.hexdigest().lower() != sha256.lower():
-                return False, '校验不通过（下载可能被截断/篡改）'
-        return True, '已下载 %d 字节' % size
-    except Exception as exc:
-        return False, '下载失败：%s' % str(exc)[:120]
 
 
 def apply_update():
