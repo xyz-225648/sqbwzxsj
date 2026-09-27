@@ -27,10 +27,10 @@ jobs:
   sync:
     # 镜像自己推上来的那次不重复触发，避免自己触发自己
     if: github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: 取出完整历史
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -43,9 +43,9 @@ jobs:
   releases:
     # 同步完代码后，把 GitHub 发行版也对齐（从 CHANGELOG 取说明，附件本地没有就从 Gitee 下载）
     needs: sync
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
