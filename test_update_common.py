@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 """update_common.py 纯函数单元测试：python test_update_common.py"""
+import sys
 import unittest
+
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
 
 from update_common import (
     is_valid_page, norm_ver, page_ver, parse_latest, parse_program)
