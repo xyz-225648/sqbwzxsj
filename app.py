@@ -63,7 +63,7 @@ APP_TITLE = '宿迁职业技术学院作息时间表'
 # 桌面壳自己的版本号（程序本体版本，与页面版本分开算）：
 # 只有改了壳代码、重打 exe 时才升；纯改页面 / calendar.txt 不用动它。
 # 页面拿它跟仓库里的 program.txt 比，用来发现「网页是最新的、但程序本体老了」。
-SHELL_VERSION = 'v2.4.3'
+SHELL_VERSION = 'v2.4.4'
 WEBVIEW2_GUID = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
 WEBVIEW2_INSTALL_URL = 'https://go.microsoft.com/fwlink/p/?LinkId=2124703'
 
@@ -242,9 +242,13 @@ def _try_base(base):
         html = fetch_page(remote['v'])
         if not is_valid_page(html):
             return None, None
-        # 只升不降：线上页面版本不比内置页新就不写缓存，避免把新打包的页面降级成旧页
-        if page_ver(html) <= page_ver(load_current_html()):
-            api_log('线上页面版本不新，跳过缓存覆盖', 'warn')
+        # 只升不降；同版本号但内容不同（哈希不同）也要换 ——
+        # 页面热修（同版本改内容）在 Windows 端也必须生效
+        cur = load_current_html()
+        same_hash = (hashlib.sha256(html.encode('utf-8')).hexdigest()
+                     == hashlib.sha256(cur.encode('utf-8')).hexdigest())
+        if page_ver(html) < page_ver(cur) or (page_ver(html) == page_ver(cur) and same_hash):
+            api_log('线上页面版本/内容不比本地新，跳过缓存覆盖', 'warn')
             return None, None
         write_text(os.path.join(cache_dir(), 'index.html'), html)
         write_text(os.path.join(cache_dir(), 'version.txt'), remote_ver)
@@ -304,8 +308,12 @@ def wait_window_ready(window, timeout=20.0):
 
 def silent_update(window):
     html, ver = check_update()
-    # 只在新版号更大时才替换：否则会把本地/新版页面降级成线上的旧页面（v2.3.0 测试时踩到）
-    if page_ver(html) <= page_ver(load_current_html()):
+    cur = load_current_html()
+    # 只在新版号更大、或同版本内容不同（哈希不同）时才替换：
+    # 否则会把本地/新版页面降级成线上的旧页面（v2.3.0 测试时踩到）
+    same_hash = (hashlib.sha256((html or '').encode('utf-8')).hexdigest()
+                 == hashlib.sha256(cur.encode('utf-8')).hexdigest())
+    if page_ver(html) < page_ver(cur) or (page_ver(html) == page_ver(cur) and same_hash):
         api_log('线上页面 %s 不比本地新，跳过替换' % ver)
         return
     if not html:
