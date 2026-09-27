@@ -78,6 +78,9 @@ WINDOW_WIDTH = 1120
 WINDOW_HEIGHT = 880
 LOG_MAX_BYTES = 5 * 1024 * 1024  # api.log 轮转阈值
 LOG_BACKUP_COUNT = 3
+SLOW_BOOT_SECONDS = 15           # 窗口创建超过这个秒数记 warn（排查老电脑/杀软拖慢启动）
+
+_BOOT_T0 = time.time()
 
 
 # ==================== 基础工具 ====================
@@ -576,8 +579,10 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
             return self._reply({'ok': True, 'native': True, 'name': APP_TITLE,
                                 'shell': SHELL_VERSION})
         if u.path == '/version':
-            # 页面用它判断「程序本体要不要更新」（网页自己能热更新，exe 不能）
-            return self._reply({'ok': True, 'kind': 'exe', 'shell': SHELL_VERSION})
+            # 页面用它判断「程序本体要不要更新」（网页自己能热更新，exe 不能）；
+            # env 里顺带暴露 WebView2 版本和系统 DPI，用户报显示问题时直接看日志/接口就能定位
+            return self._reply({'ok': True, 'kind': 'exe', 'shell': SHELL_VERSION,
+                                'env': {'webview2': webview2_version(), 'dpi': dpi_scale()}})
         if u.path == '/file':
             # 只读代理：把仓库里的文本文件（目前只放行 calendar.txt）转给页面，白名单写死。
             # 为什么要它：网页版读 GitHub 镜像，校园网/内网常常不通；桌面版走本地壳 → Gitee，稳得多。
@@ -822,7 +827,7 @@ def msgbox(text, icon=0x40):
         pass
 
 
-def has_webview2():
+def _webview2_reg_version():
     try:
         import winreg
         roots = [
@@ -835,19 +840,42 @@ def has_webview2():
                 with winreg.OpenKey(root, path) as k:
                     ver, _ = winreg.QueryValueEx(k, 'pv')
                     if ver and ver != '0.0.0.0':
-                        return True
+                        return str(ver)
             except OSError:
                 continue
     except Exception:
         pass
+    return ''
+
+
+def webview2_version():
+    """已安装的 WebView2 Runtime 版本号；没装返回空串。供 /version 返回给页面，排查兼容问题时一眼看清。"""
+    v = _webview2_reg_version()
+    if v:
+        return v
     for p in (r'C:\Program Files (x86)\Microsoft\EdgeWebView\Application',
               r'C:\Program Files\Microsoft\EdgeWebView\Application'):
         try:
-            if os.path.isdir(p) and any(n[0].isdigit() for n in os.listdir(p)):
-                return True
+            if os.path.isdir(p):
+                vers = [n for n in os.listdir(p) if n[0].isdigit()]
+                if vers:
+                    return sorted(vers)[-1]
         except Exception:
             pass
-    return False
+    return ''
+
+
+def dpi_scale():
+    """系统 DPI 缩放百分比（100/125/150…）；读不到返回 0。排查高分屏显示问题用。"""
+    try:
+        import ctypes
+        return int(ctypes.windll.user32.GetDpiForSystem())
+    except Exception:
+        return 0
+
+
+def has_webview2():
+    return bool(webview2_version())
 
 
 def open_in_browser(html, quiet=False):
@@ -1346,6 +1374,9 @@ def run_window(html):
     # pywebview 默认 private_mode=True —— 文档原话「cookies and local storage are not
     # preserved」，而且窗口一关就把 profile 整个删掉。设置面板「改完不生效、下次打开
     # 又回到默认」就是这个原因（实测）。改成落盘 + 指定目录即可。
+    boot_cost = time.time() - _BOOT_T0
+    api_log('窗口创建耗时 %.1f 秒' % boot_cost,
+            'warn' if boot_cost > SLOW_BOOT_SECONDS else 'info')
     if acquire_profile_lock():
         api_log('启用持久化配置目录，设置类改动会被记住')
         webview.start(private_mode=False, storage_path=os.path.join(cache_dir(), 'webview'))
