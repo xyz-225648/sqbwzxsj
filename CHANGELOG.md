@@ -11,6 +11,15 @@
   发现新版页面自动下载并重载窗口，**不用重新打开软件**；安卓端同样每 5 分钟查一次，
   发现新版自动 `loadDataWithBaseURL` 热替换。
 
+### 优化（工程）
+
+- **日志标准化**：`api_log` 底层换成 `logging` + `RotatingFileHandler`
+  （api.log 最大 5MB，保留 3 份轮转备份，日志带函数名/行号）。
+- **更新解析加固**：抽离 `update_common.py`，`version.txt` / `program.txt` 改为
+  「正则定位 JSON → json.loads → 字段/域名/sha256 逐项校验」，脏数据直接放弃本轮，
+  不再靠 `{.*}` 粗正则抓取。
+- `app.py` 瘦身：版本比较、页面校验、下载与 sha256 校验移到 `update_common.py`。
+
 ## v2.4.2（2026-09-26）
 
 ### 修复
