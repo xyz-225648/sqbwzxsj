@@ -32,6 +32,7 @@ jobs:
       - name: 取出完整历史
         uses: actions/checkout@v5
         with:
+          ref: master
           fetch-depth: 0
 
       - name: 判定方向并同步
@@ -47,6 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: master
           fetch-depth: 0
 
       - name: 同步 GitHub 发行版
