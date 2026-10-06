@@ -569,7 +569,8 @@ function holidayCountdown(d){
     }).sort();
     if (!keys.length) return null;
     var today = calKey(d);
-    var next = keys.find(function(k){ return k >= today; }) || keys[keys.length - 1];
+    var next = keys.find(function(k){ return k >= today; });
+    if (!next) return null;                    /* 校历里没有未来的假期了（都过完了）就不显示 */
     var target = new Date(next + 'T00:00:00');
     if (isNaN(target)) return null;
     var days = Math.round((target - new Date(today + 'T00:00:00')) / 86400000);
