@@ -16,7 +16,9 @@ import android.os.IBinder;
 public class KeepAliveService extends Service {
 
     public static final String CHANNEL_ID = "sqzy_keepalive";
-    private static final int NOTICE_ID = 8801;
+    /* 8701：MainActivity 的提醒通知 ID 从 8800 起自增，这里必须错开 8800+ 序列，
+       否则两条通知会互相顶掉 */
+    private static final int NOTICE_ID = 8701;
 
     @Override
     public IBinder onBind(Intent intent) {
