@@ -93,7 +93,6 @@ def main():
 
     log('updater start target=%s version=%s' % (args.target, args.version))
     time.sleep(1.5)                      # 给主程序退出留时间
-    kill_old(args.target)
 
     tmp = os.path.join(tempfile.gettempdir(), 'sqzy_new.exe')
     try:
@@ -109,6 +108,10 @@ def main():
         except Exception:
             pass
         return 2
+
+    # 校验通过后才结束旧进程：下载失败或 sha256 不符时旧程序必须原样保留，
+    # 不能在旧程序已退出、新包又不可用的情况下把用户的应用「弄消失」。
+    kill_old(args.target)
 
     if not move_with_retry(tmp, args.target):
         log('replace failed, new file still at %s' % tmp)
