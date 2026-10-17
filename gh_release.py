@@ -36,31 +36,30 @@ NOTE = ('> 本仓库是**主仓库**（开发、PR、发行都在这里）；'
 
 
 def asset_file(local, url):
-    """本地有就直接用；没有（GitHub Actions 环境）就从 Gitee 下载到临时目录。"""
+    """本地有就直接用；没有（GitHub Actions 环境）就从 Gitee 下载到临时目录。
+    两段式：正式名只会由 .part 下载完整后 os.replace 生成，所以正式名存在即可直接复用，
+    半截下载只会留在 .part，永远混不进上传路径。"""
     if os.path.exists(local):
         return local
     if not url:
         return None
     tmp = os.path.join(tempfile.gettempdir(), os.path.basename(local))
     if os.path.exists(tmp):
-        # 半截临时文件（上次下载断了留下的）直接删掉重下，绝不拿它冒充附件上传
-        try:
-            os.remove(tmp)
-        except Exception as exc:
-            print('    ✗ 旧临时文件 %s 删不掉 %r' % (tmp, exc))
-            return None
+        return tmp
     print('    · 本地没有 %s，从 Gitee 下载…' % os.path.basename(local))
+    part = tmp + '.part'
     try:
-        with urllib.request.urlopen(url, timeout=600) as r, open(tmp, 'wb') as f:
+        with urllib.request.urlopen(url, timeout=600) as r, open(part, 'wb') as f:
             while True:
                 chunk = r.read(1 << 16)
                 if not chunk:
                     break
                 f.write(chunk)
+        os.replace(part, tmp)
         return tmp
     except Exception as exc:
         try:
-            os.remove(tmp)
+            os.remove(part)
         except Exception:
             pass
         print('    ✗ 下载失败 %r' % exc)
@@ -90,7 +89,10 @@ def changelog(tag):
         if ln.startswith('## '):
             if on:
                 break
-            on = ln[3:].strip() == tag
+            # 标题形如「## v2.4.7（2026-10-18）」：提取 ## 后的版本 token 与 tag 精确比较；
+            # 不能 startswith，否则 v2.4.7 会误配 v2.4.70 这类标题
+            m = re.match(r'v[0-9.]+', ln[3:].strip())
+            on = bool(m) and m.group(0) == tag
             if on:
                 continue
         if on:
@@ -185,7 +187,12 @@ def cmd_sync():
             for path, label, url in ASSETS:
                 src = asset_file(path, url)
                 if not src:
-                    print('    · 拿不到 %s，跳过' % label)
+                    if url:
+                        # 有官方直链却拿不到（本地没有 + 下载失败）是硬失败，不能静默 OK
+                        print('    ✗ 拿不到 %s（官方直链下载失败），计入失败' % label)
+                        bad += 1
+                    else:
+                        print('    · 拿不到 %s，跳过' % label)
                     continue
                 if not upload_asset(rel['id'], src, label):
                     bad += 1
