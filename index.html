@@ -1974,7 +1974,9 @@ function openExternal(url){
   /* 安卓 WebView 没开多窗口支持时 window.open 默认什么都不做：location.href 会触发
      安卓壳 shouldOverrideUrlLoading 的「http(s) → 系统浏览器」外抛通道，优先走它 */
   if (isAndroid()){
-    try{ location.href = url; }catch(e){ try{ window.open(url, '_blank'); }catch(_){} }
+    /* 依赖壳 shouldOverrideUrlLoading 把 http(s) 导航外抛系统浏览器；
+       window.open 在无多窗口支持的 WebView 上静默无效，不要当兜底 */
+    location.href = url;
     return;
   }
   /* 桌面版的页面在 WebView 里，点外链得让壳用系统浏览器打开 */
