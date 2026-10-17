@@ -63,7 +63,7 @@ APP_TITLE = '宿迁职业技术学院作息时间表'
 # 桌面壳自己的版本号（程序本体版本，与页面版本分开算）：
 # 只有改了壳代码、重打 exe 时才升；纯改页面 / calendar.txt 不用动它。
 # 页面拿它跟仓库里的 program.txt 比，用来发现「网页是最新的、但程序本体老了」。
-SHELL_VERSION = 'v2.4.6'
+SHELL_VERSION = 'v2.4.7'
 WEBVIEW2_GUID = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
 WEBVIEW2_INSTALL_URL = 'https://go.microsoft.com/fwlink/p/?LinkId=2124703'
 
@@ -131,9 +131,19 @@ def load_current_html():
         # 避免启动热更新把新页面“降级”回线上旧页。
         if page_ver(cached) > page_ver(emb):
             return cached
-        if page_ver(cached) == page_ver(emb) and hashlib.sha256(
-                cached.encode('utf-8')).hexdigest() == hashlib.sha256(emb.encode('utf-8')).hexdigest():
-            return cached
+        if page_ver(cached) == page_ver(emb):
+            # 同版本热修页（版本号没升、只改了内容）：缓存比内置页新就继续用缓存，
+            # 否则热修页重启一次就丢。mtime 比内容哈希便宜，先比它，哈希相同兜底。
+            cpath = os.path.join(cache_dir(), 'index.html')
+            epath = os.path.join(base_dir(), HTML_NAME)
+            try:
+                if os.path.getmtime(cpath) > os.path.getmtime(epath):
+                    return cached
+            except Exception:
+                pass
+            if hashlib.sha256(
+                    cached.encode('utf-8')).hexdigest() == hashlib.sha256(emb.encode('utf-8')).hexdigest():
+                return cached
         return emb
     return emb
 
@@ -461,15 +471,17 @@ _HELPER = []
 # 为什么必须要有：接口监听在 127.0.0.1:51900，浏览器里打开的**任意网页**都能向它发 GET
 # （CORS 只拦读响应，不拦发请求），于是能伪造系统通知、改窗口状态、甚至把助手关掉。
 # 只读接口（页面本体、版本、/ping）放行，会改东西的接口（state / notify / open / quit / config）必须带令牌。
-_TOKEN = [secrets.token_hex(16)]
+_TOKEN = [os.environ.get('SQZY_API_TOKEN') or secrets.token_hex(16)]
 OPEN_PATHS = ('/', '/index.html', '/ping', '/latest', '/version')
 
 
 def stop_helper():
-    """退出前请助手进程自己走（正常退出，它才能清掉自己的临时目录）"""
+    """退出前请助手进程自己走（正常退出，它才能清掉自己的临时目录）。
+    /quit 是会改状态的接口，必须带上主进程分发的令牌，裸调只会 403。"""
     if _PORT[0] and _HELPER:
         try:
-            urllib.request.urlopen('http://127.0.0.1:%d/quit' % _PORT[0], timeout=1).read()
+            urllib.request.urlopen(
+                'http://127.0.0.1:%d/quit?k=%s' % (_PORT[0], _TOKEN[0]), timeout=1).read()
         except Exception:
             pass
     for proc in list(_HELPER):
@@ -735,9 +747,9 @@ def apply_update():
         # 源码模式下 sys.executable 是 python.exe：更新器会对其 taskkill /F 并尝试用
         # exe 覆盖解释器本身，属于灾难性误操作面，必须在这里直接拒绝。
         return False, '源码模式不支持一键更新'
-    if not _UPDATE['path']:
-        # 新版流程不需要先下载：更新器自己按 program.txt 的直链 + sha256 下载
-        pass
+    # /download 已经把校验过的包写进 _UPDATE['path']：文件还在就直接复用，
+    # 更新器不用再下一遍（省一次安装包流量）。
+    reuse = _UPDATE['path'] if _UPDATE['path'] and os.path.exists(_UPDATE['path']) else None
     exe = sys.executable
     info = _UPDATE.get('info') or {}
     url = info.get('exeUrl')
@@ -754,9 +766,11 @@ def apply_update():
     updater = os.path.join(tempfile.gettempdir(), 'sqzy_updater.exe')
     try:
         shutil.copyfile(src, updater)
-        subprocess.Popen([updater, '--url', url, '--sha256', sha,
-                          '--target', exe, '--version', ver],
-                         creationflags=0x08000000, close_fds=True)
+        argv = [updater, '--url', url, '--sha256', sha,
+                '--target', exe, '--version', ver]
+        if reuse:
+            argv += ['--file', reuse]
+        subprocess.Popen(argv, creationflags=0x08000000, close_fds=True)
         api_log('已启动更新器：%s -> %s' % (ver, exe))
         return True, '更新器已启动，程序将退出并自动替换重启'
     except Exception as exc:
@@ -1004,12 +1018,19 @@ def read_win_state():
 def write_win_state(**kw):
     o = read_win_state()
     o.update(kw)
+    tmp = None
     try:
-        tmp = win_state_path() + '.tmp'
-        with open(tmp, 'w', encoding='utf-8') as fp:
+        # 固定 .tmp 名会并发写坏 JSON：每次用唯一的临时文件，写完 os.replace 原子替换
+        fd, tmp = tempfile.mkstemp(prefix='win_state.', dir=os.path.dirname(win_state_path()))
+        with os.fdopen(fd, 'w', encoding='utf-8') as fp:
             json.dump(o, fp, ensure_ascii=False)
         os.replace(tmp, win_state_path())
     except Exception as exc:
+        if tmp:
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
         api_log('写窗口状态失败 %r' % (exc,), 'warn')
     return o
 
@@ -1338,68 +1359,73 @@ def helper_ready(port, timeout=15.0):
 
 
 def run_window(html):
-    port = pick_free_port()
-    if port:
-        try:
-            # 源码运行时 sys.executable 只是 python.exe，必须补上脚本路径，
-            # 否则助手进程会把 --api-server 当成未知参数直接退出（踩过）。
-            argv = [sys.executable]
-            if not getattr(sys, 'frozen', False):
-                argv.append(os.path.abspath(sys.argv[0]))
-            argv += ['--api-server', str(port)]
+    try:
+        port = pick_free_port()
+        if port:
             try:
-                hlog = open(os.path.join(cache_dir(), 'helper.log'), 'ab')
-            except Exception:
-                hlog = subprocess.DEVNULL
-            # 关键：清掉继承来的 _MEIPASS2。PyInstaller onefile 靠它让子进程共享
-            # 父进程的解压目录，结果助手退出时也去删这个共享目录、而主程序还在用，
-            # 就会弹「Failed to remove temporary directory」。
-            env = dict(os.environ)
-            env.pop('_MEIPASS2', None)
-            proc = subprocess.Popen(argv, creationflags=0x08000000,
-                                    stdout=hlog, stderr=hlog, close_fds=True, env=env)
-            _HELPER.append(proc)
-            try:
-                if hlog is not subprocess.DEVNULL:
-                    hlog.close()
-            except Exception:
-                pass
-            _PORT[0] = port
-            api_log('助手进程已起: %s' % ' '.join(argv[1:]))
-        except Exception as exc:
-            api_log('助手进程启动失败 %r' % (exc,), 'error')
-    if port and not helper_ready(port):
-        api_log('助手进程 15 秒内没有应答，本次改为直接塞页面'
-                '（系统通知/窗口置顶/设置落盘会缺）', 'warn')
-        stop_helper()
-        _PORT[0] = 0
-        port = 0
+                # 源码运行时 sys.executable 只是 python.exe，必须补上脚本路径，
+                # 否则助手进程会把 --api-server 当成未知参数直接退出（踩过）。
+                argv = [sys.executable]
+                if not getattr(sys, 'frozen', False):
+                    argv.append(os.path.abspath(sys.argv[0]))
+                argv += ['--api-server', str(port)]
+                try:
+                    hlog = open(os.path.join(cache_dir(), 'helper.log'), 'ab')
+                except Exception:
+                    hlog = subprocess.DEVNULL
+                # 关键：清掉继承来的 _MEIPASS2。PyInstaller onefile 靠它让子进程共享
+                # 父进程的解压目录，结果助手退出时也去删这个共享目录、而主程序还在用，
+                # 就会弹「Failed to remove temporary directory」。
+                env = dict(os.environ)
+                env.pop('_MEIPASS2', None)
+                # 把本进程的接口令牌带给助手：/quit 要令牌，主进程 stop_helper 才能优雅请走它
+                env['SQZY_API_TOKEN'] = _TOKEN[0]
+                proc = subprocess.Popen(argv, creationflags=0x08000000,
+                                        stdout=hlog, stderr=hlog, close_fds=True, env=env)
+                _HELPER.append(proc)
+                try:
+                    if hlog is not subprocess.DEVNULL:
+                        hlog.close()
+                except Exception:
+                    pass
+                _PORT[0] = port
+                api_log('助手进程已起: %s' % ' '.join(argv[1:]))
+            except Exception as exc:
+                api_log('助手进程启动失败 %r' % (exc,), 'error')
+        if port and not helper_ready(port):
+            api_log('助手进程 15 秒内没有应答，本次改为直接塞页面'
+                    '（系统通知/窗口置顶/设置落盘会缺）', 'warn')
+            stop_helper()
+            _PORT[0] = 0
+            port = 0
 
-    opts = dict(width=WINDOW_WIDTH, height=WINDOW_HEIGHT, min_size=(340, 560), resizable=True,
-                text_select=False, confirm_close=False, background_color='#f1f5f9')
-    if port:
-        # 有助手进程就让它把页面用 http 发出来（真实 origin → localStorage 可用）
-        window = webview.create_window(APP_TITLE, url='http://127.0.0.1:%d/' % port, **opts)
-    else:
-        # 助手起不来时退回直塞，功能都在，只是设置不落盘
-        window = webview.create_window(APP_TITLE, html=with_api(html), **opts)
-    install_window_behavior()
-    threading.Thread(target=win_state_poller, daemon=True).start()
-    if UPDATE_BASE:
-        threading.Thread(target=silent_update_loop, args=(window,), daemon=True).start()
-    # pywebview 默认 private_mode=True —— 文档原话「cookies and local storage are not
-    # preserved」，而且窗口一关就把 profile 整个删掉。设置面板「改完不生效、下次打开
-    # 又回到默认」就是这个原因（实测）。改成落盘 + 指定目录即可。
-    boot_cost = time.time() - _BOOT_T0
-    api_log('窗口创建耗时 %.1f 秒' % boot_cost,
-            'warn' if boot_cost > SLOW_BOOT_SECONDS else 'info')
-    if acquire_profile_lock():
-        api_log('启用持久化配置目录，设置类改动会被记住')
-        webview.start(private_mode=False, storage_path=os.path.join(cache_dir(), 'webview'))
-    else:
-        api_log('已有窗口在用配置目录，本次退回不落盘模式', 'warn')
-        webview.start()
-    stop_helper()
+        opts = dict(width=WINDOW_WIDTH, height=WINDOW_HEIGHT, min_size=(340, 560), resizable=True,
+                    text_select=False, confirm_close=False, background_color='#f1f5f9')
+        if port:
+            # 有助手进程就让它把页面用 http 发出来（真实 origin → localStorage 可用）
+            window = webview.create_window(APP_TITLE, url='http://127.0.0.1:%d/' % port, **opts)
+        else:
+            # 助手起不来时退回直塞，功能都在，只是设置不落盘
+            window = webview.create_window(APP_TITLE, html=with_api(html), **opts)
+        install_window_behavior()
+        threading.Thread(target=win_state_poller, daemon=True).start()
+        if UPDATE_BASE:
+            threading.Thread(target=silent_update_loop, args=(window,), daemon=True).start()
+        # pywebview 默认 private_mode=True —— 文档原话「cookies and local storage are not
+        # preserved」，而且窗口一关就把 profile 整个删掉。设置面板「改完不生效、下次打开
+        # 又回到默认」就是这个原因（实测）。改成落盘 + 指定目录即可。
+        boot_cost = time.time() - _BOOT_T0
+        api_log('窗口创建耗时 %.1f 秒' % boot_cost,
+                'warn' if boot_cost > SLOW_BOOT_SECONDS else 'info')
+        if acquire_profile_lock():
+            api_log('启用持久化配置目录，设置类改动会被记住')
+            webview.start(private_mode=False, storage_path=os.path.join(cache_dir(), 'webview'))
+        else:
+            api_log('已有窗口在用配置目录，本次退回不落盘模式', 'warn')
+            webview.start()
+    finally:
+        # webview 崩了 / 助手没起来这些异常路径也要请走助手，别让孤儿进程占着端口
+        stop_helper()
 
 
 def main():
@@ -1426,17 +1452,24 @@ def main():
     refresh_autostart()                 # exe 被挪了地方也能自愈
     # 把 PID 落盘：启动不了时（比如上次的进程没退干净）能一眼看出是谁占着
     write_text(os.path.join(cache_dir(), 'app.pid'), str(os.getpid()))
-    html = load_current_html()
-
-    if not has_webview2():
-        open_in_browser(html)
-        return
-
     try:
-        run_window(html)
-    except Exception as exc:
-        open_in_browser(html)
-        print('webview failed:', exc, file=sys.stderr)
+        html = load_current_html()
+
+        if not has_webview2():
+            open_in_browser(html)
+            return
+
+        try:
+            run_window(html)
+        except Exception as exc:
+            open_in_browser(html)
+            print('webview failed:', exc, file=sys.stderr)
+    finally:
+        # 退出前删掉 app.pid：留着旧 PID 会让排查/测试把后来复用了这个 PID 的进程误杀
+        try:
+            os.remove(os.path.join(cache_dir(), 'app.pid'))
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':
