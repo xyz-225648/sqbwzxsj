@@ -65,18 +65,35 @@ def say(ok_flag, text):
         bad.append(text)
 
 
-local_page = open(PAGE, 'rb').read()
-local_ver = open('release/version.txt', encoding='utf-8').read().strip()
-_app_m = re.search(r"var APP_VERSION = '([^']+)'", local_page.decode('utf-8'))
+try:
+    local_page = open(PAGE, 'rb').read()
+except Exception as _e:
+    say(False, '本地页面 %s 读不到（%r）' % (PAGE, _e))
+    local_page = None
+try:
+    local_ver = open('release/version.txt', encoding='utf-8').read().strip()
+except Exception as _e:
+    say(False, 'release/version.txt 读不到（%r）' % (_e,))
+    local_ver = ''
+_page_src = local_page.decode('utf-8') if local_page else ''
+_app_m = re.search(r"var APP_VERSION = '([^']+)'", _page_src)
 app_v = _app_m.group(1) if _app_m else '?'
-_tag = re.search(r"var RELEASE_TAG = '([^']+)'", local_page.decode('utf-8'))
+_tag = re.search(r"var RELEASE_TAG = '([^']+)'", _page_src)
 tag = _tag.group(1) if _tag else app_v
 
 # 程序本体版本与页面版本分开算：exe 读 app.py 的 SHELL_VERSION，apk 读 AndroidManifest 的
 # versionName。只有重打安装包才升它们；纯页面 / 数据变更只升页面版本（version.txt）。
-_shell_m = re.search(r"SHELL_VERSION = '([^']+)'", open('app.py', encoding='utf-8').read())
+_shell_m = None
+try:
+    _shell_m = re.search(r"SHELL_VERSION = '([^']+)'", open('app.py', encoding='utf-8').read())
+except Exception as _e:
+    say(False, 'app.py 读不到（%r）' % (_e,))
 shell_ver = ('v' + _shell_m.group(1).lstrip('v')) if _shell_m else '?'
-_manifest = open('.apkbuild/app/AndroidManifest.xml', encoding='utf-8').read()
+_manifest = ''
+try:
+    _manifest = open('.apkbuild/app/AndroidManifest.xml', encoding='utf-8').read()
+except Exception as _e:
+    say(False, '.apkbuild/app/AndroidManifest.xml 读不到（%r）' % (_e,))
 _man_m = re.search(r'android:versionName="([^"]+)"', _manifest)
 apk_manifest_ver = ('v' + _man_m.group(1).lstrip('v')) if _man_m else '?'
 if shell_ver != app_v:
@@ -102,8 +119,9 @@ for _label, _url in _chain:
     if _body:
         src, live_page = _label, _body
         break
-say(live_page == local_page, '线上页面可取且与本地一致（来源 %s，%d 字节，md5 %s）'
-    % (src, len(local_page), hashlib.md5(local_page).hexdigest()[:10]))
+say(live_page == local_page and local_page is not None,
+    '线上页面可取且与本地一致（来源 %s，%d 字节，md5 %s）'
+    % (src, len(local_page or b''), hashlib.md5(local_page or b'').hexdigest()[:10]))
 if src != '发行版附件':
     say(False, '发行版附件 index.html 拿不到 —— 发布时要把 release/index.html 也传成发行版附件（自动更新第一来源）')
 if src != 'raw':
@@ -123,10 +141,18 @@ if m:
 say(live_v == app_v, '线上版本号 %s == 页面 APP_VERSION %s' % (live_v, app_v))
 
 # 发布后必须同步更新 README（用户要求，也踩过：README 落后过两版）——这里机械校验，不靠记性
-_readme = re.search(r'当前版本：\*\*(v[0-9.]+)\*\*', open('README.md', encoding='utf-8').read())
+_readme = None
+try:
+    _readme = re.search(r'当前版本：\*\*(v[0-9.]+)\*\*', open('README.md', encoding='utf-8').read())
+except Exception as _e:
+    say(False, 'README.md 读不到（%r）' % (_e,))
 say(bool(_readme) and _readme.group(1) == app_v,
     'README 当前版本 %s == 页面 APP_VERSION %s' % ((_readme.group(1) if _readme else '没写'), app_v))
-local_prog = open('release/program.txt', encoding='utf-8').read().strip()
+try:
+    local_prog = open('release/program.txt', encoding='utf-8').read().strip()
+except Exception as _e:
+    say(False, 'release/program.txt 读不到（%r）' % (_e,))
+    local_prog = ''
 _prog_body, ok_prog = get_fresh(RAW + 'program.txt', local_prog)
 live_prog = (_prog_body or b'').decode('utf-8', 'replace').strip()
 say(ok_prog, '线上 program.txt 与本地一致：%s' % live_prog[:80])
@@ -148,7 +174,11 @@ if prog:
     if prog.get('tag'):
         prog_tag = prog.get('tag')
     # README 顶部的「程序本体」版本也要跟 program.txt 的 tag 对齐（页面版本单独一行已经验过）
-    _readme_shell = re.search(r'程序本体：\*\*(v[0-9.]+)\*\*', open('README.md', encoding='utf-8').read())
+    _readme_shell = None
+    try:
+        _readme_shell = re.search(r'程序本体：\*\*(v[0-9.]+)\*\*', open('README.md', encoding='utf-8').read())
+    except Exception:
+        _readme_shell = None      # 读不到前面已经计过 bad，这里不重复报
     say(not _readme_shell or _readme_shell.group(1) == prog.get('tag', ''),
         'README 程序本体 %s == program.txt tag %s'
         % ((_readme_shell.group(1) if _readme_shell else '没写'), prog.get('tag')))
@@ -156,11 +186,18 @@ else:
     say(False, '线上 program.txt 解析不出 JSON')
 for label, ext in (('安卓安装包', 'apk'), ('Windows 程序', 'exe')):
     name = '宿迁职业技术学院作息时间表.' + ext
+    sha_key = ext + 'Sha256'          # apkSha256 / exeSha256
     data = get(REL + prog_tag + '/' + urllib.parse.quote(name))
     try:
         local = open(name, 'rb').read()
     except Exception as _e:
-        say(False, '%s 本地文件 %s 读不到（%r）—— 换安装包才需要重打并放一份在仓库根目录' % (label, name, _e))
+        if prog.get(sha_key):
+            # program.txt 里写了 sha（发布时机上存在这个包），本地缺就是缺发布物
+            say(False, '%s 本地文件 %s 读不到（%r）—— program.txt 里有 %s，本地必须放一份'
+                % (label, name, _e, sha_key))
+        else:
+            # 与 sha/size 缺省的新语义对齐：program.txt 没给 sha，本地没有就不核验
+            print('  · 跳过 %s 核验（本地没有 %s，program.txt 的 %s 缺省）' % (label, name, sha_key))
         continue
     say(data == local, '%s 下载可用且与本地一致（tag %s，md5 %s）'
         % (label, prog_tag, hashlib.md5(local).hexdigest()[:10]))
