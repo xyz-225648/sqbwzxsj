@@ -2388,7 +2388,7 @@ function initSettings(){
       var info = programInfo || latestInfo;
       try{
         if (window.SQZY_ANDROID && window.SQZY_ANDROID.shareApk)
-          r = window.SQZY_ANDROID.shareApk(apkMirrors(info).join('\n'));
+          r = window.SQZY_ANDROID.shareApk(apkMirrors(info).join('\n'), (info && info.apkSha256) || '');
       }catch(e){ r = 'fail'; }
       if (r === 'ok') inPageToast('选个应用发出去就行', '发的是本机这份安装包，对方点开就能装');
       else if (r === 'downloading') inPageToast('本机这份读不出来，正在下载安装包…', '下完会自动弹出分享，稍等几秒');

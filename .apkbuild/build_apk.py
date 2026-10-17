@@ -78,17 +78,25 @@ def main():
     run([os.path.join(BT, 'zipalign.exe'), '-f', '4', os.path.join(BUILD, 'withdex.apk'),
          os.path.join(BUILD, 'aligned.apk')])
     ks = os.path.join(HERE, 'release.keystore')
+    ks_alias = os.environ.get('APK_KEY_ALIAS', 'androiddebugkey')
+    ks_store_pass = os.environ.get('APK_KEYSTORE_PASS', '')
+    ks_key_pass = os.environ.get('APK_KEY_PASS', '')
+    if not ks_store_pass or not ks_key_pass:
+        print('  ✗ 发布签名口令必须用环境变量注入（不再接受硬编码口令）：')
+        print('    set APK_KEYSTORE_PASS=<keystore 存储口令>')
+        print('    set APK_KEY_PASS=<密钥口令>')
+        sys.exit(1)
     if not os.path.exists(ks):
         run([os.path.join(JDKBIN, 'keytool.exe'), '-genkeypair', '-keystore', ks,
-             '-storepass', 'android', '-keypass', 'android', '-alias', 'androiddebugkey',
+             '-storepass', ks_store_pass, '-keypass', ks_key_pass, '-alias', ks_alias,
              '-keyalg', 'RSA', '-keysize', '2048', '-validity', '10000',
-             '-dname', 'CN=Android Debug,O=Android,C=CN'])
+             '-dname', 'CN=Android Release,O=Android,C=CN'])
     print('  apksigner ...')
     if os.path.exists(OUT):
         os.remove(OUT)
     run(['cmd', '/c', os.path.join(BT, 'apksigner.bat'), 'sign', '--ks', ks,
-         '--ks-pass', 'pass:android', '--key-pass', 'pass:android',
-         '--ks-key-alias', 'androiddebugkey', '--v1-signing-enabled', 'true',
+         '--ks-pass', 'pass:' + ks_store_pass, '--key-pass', 'pass:' + ks_key_pass,
+         '--ks-key-alias', ks_alias, '--v1-signing-enabled', 'true',
          '--v2-signing-enabled', 'true', '--out', OUT, os.path.join(BUILD, 'aligned.apk')])
     idsig = OUT + '.idsig'
     if os.path.exists(idsig):

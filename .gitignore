@@ -3,6 +3,10 @@
 .github_token
 .github_owner
 
+# 发布签名密钥（绝不入库）
+release.keystore
+*.keystore
+
 # 构建产物 / 临时目录
 build/
 dist/
