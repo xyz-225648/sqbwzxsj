@@ -7,14 +7,22 @@
 令牌: 环境变量 GITHUB_TOKEN（GitHub Actions 里自动有），或同目录下的 .github_token
 附件来源: 本地有就用本地；本地没有（Actions 环境）就从 Gitee 发行版下载。
 """
-import base64, io, json, mimetypes, os, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
+import base64, io, json, mimetypes, os, re, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
 
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+HERE = os.path.dirname(os.path.abspath(__file__))
 TOK = (os.environ.get('GITHUB_TOKEN') or '').strip() \
-    or io.open('.github_token', encoding='utf-8').read().strip()
+    or io.open(os.path.join(HERE, '.github_token'), encoding='utf-8').read().strip()
 OWNER, REPO = 'xyz-225648', 'sqbwzxsj'
-TAGS = ['v1.0', 'v2.0.1', 'v2.1.0', 'v2.1.1', 'v2.1.2', 'v2.1.3', 'v2.2.0', 'v2.2.1', 'v2.2.2', 'v2.3.0', 'v2.3.1', 'v2.3.2', 'v2.3.3', 'v2.3.4', 'v2.3.5', 'v2.3.6', 'v2.3.7', 'v2.3.8', 'v2.3.9', 'v2.3.10', 'v2.3.11', 'v2.3.12', 'v2.3.13', 'v2.3.14', 'v2.3.15', 'v2.4.1', 'v2.4.2', 'v2.4.3', 'v2.4.4', 'v2.4.5', 'v2.4.6']   # 最后一个当"最新版"，附件挂在它上面
-LATEST = TAGS[-1]
+# TAGS 不再手工维护：从 CHANGELOG.md 的「## v<版本>」标题自动取（去重 + 按版本号升序）。
+# 以后发布新版本只在 CHANGELOG 顶部加一节，这里自动跟上。
+# v1.0 在 CHANGELOG 里没有独立章节（历史遗留，发行版在 GitHub 上存在），固定带上。
+_TAG_RE = re.compile(r'^## (v[0-9.]+)')
+TAGS = sorted({'v1.0'} | {_TAG_RE.match(ln).group(1) for ln in io.open(
+    os.path.join(HERE, 'CHANGELOG.md'), encoding='utf-8').read().splitlines()
+    if _TAG_RE.match(ln)},
+    key=lambda v: tuple(int(x) for x in v[1:].split('.')))
+LATEST = TAGS[-1]   # 最后一个当"最新版"，附件挂在它上面
 # 附件名用 ASCII：GitHub 会把非 ASCII 名字削成 default.exe / -.png（踩过）
 ASSETS = [
     ('宿迁职业技术学院作息时间表.exe', 'sqzy-timetable-%s-windows.exe' % LATEST,
@@ -35,7 +43,12 @@ def asset_file(local, url):
         return None
     tmp = os.path.join(tempfile.gettempdir(), os.path.basename(local))
     if os.path.exists(tmp):
-        return tmp
+        # 半截临时文件（上次下载断了留下的）直接删掉重下，绝不拿它冒充附件上传
+        try:
+            os.remove(tmp)
+        except Exception as exc:
+            print('    ✗ 旧临时文件 %s 删不掉 %r' % (tmp, exc))
+            return None
     print('    · 本地没有 %s，从 Gitee 下载…' % os.path.basename(local))
     try:
         with urllib.request.urlopen(url, timeout=600) as r, open(tmp, 'wb') as f:
@@ -46,6 +59,10 @@ def asset_file(local, url):
                 f.write(chunk)
         return tmp
     except Exception as exc:
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
         print('    ✗ 下载失败 %r' % exc)
         return None
 
@@ -62,6 +79,8 @@ def api(method, path, payload=None, timeout=120):
             return resp.status, (json.loads(b) if b.strip() else {})
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode('utf-8', 'replace')[:300]
+    except Exception as e:
+        return 0, '网络异常：%r' % (e,)
 
 
 def changelog(tag):
@@ -101,8 +120,11 @@ def upload_asset(rel_id, path, label):
     if st == 200:
         for a in olds:
             if a['name'] == name:
-                print('    · 附件 %s 已存在（%d 字节），跳过' % (name, a.get('size', 0)))
-                return True
+                # 同名附件要删旧传新：跳过会让旧安装包永远留在发行版上
+                print('    · 附件 %s 已存在，先删旧附件再上传' % name)
+                st2, _ = api('DELETE', '/repos/%s/%s/releases/assets/%s' % (OWNER, REPO, a['id']))
+                print('    删除旧附件 %s HTTP %s' % (name, st2))
+                break
     raw = io.open(path, 'rb').read()
     url = ('https://uploads.github.com/repos/%s/%s/releases/%s/assets?name=%s'
            % (OWNER, REPO, rel_id, urllib.parse.quote(name)))
@@ -116,6 +138,9 @@ def upload_asset(rel_id, path, label):
             return True
     except urllib.error.HTTPError as e:
         print('    ✗ %s 上传失败 HTTP %s %s' % (name, e.code, e.read().decode('utf-8', 'replace')[:200]))
+        return False
+    except Exception as e:
+        print('    ✗ %s 上传失败 网络异常：%r' % (name, e))
         return False
 
 
