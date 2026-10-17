@@ -130,8 +130,10 @@ public class MainActivity extends Activity {
                 for (int hop = 0; hop < 5; hop++) {
                     java.net.URL u = new java.net.URL(current);
                     String host = u.getHost();
-                    if (host == null || (!host.equals("gitee.com")
-                            && !host.equals("raw.giteeusercontent.com"))) {
+                    /* 初始入口要求 https，每一跳也必须保持 https，跳转环保持一致 */
+                    if (!"https".equals(u.getProtocol()) || host == null
+                            || (!host.equals("gitee.com")
+                                && !host.equals("raw.giteeusercontent.com"))) {
                         return null;
                     }
                     HttpURLConnection c = (HttpURLConnection) u.openConnection();
@@ -393,10 +395,12 @@ public class MainActivity extends Activity {
                    .setNotificationVisibility(
                            DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name);
-                /* (名字, 下载id) 成对写入必须在同一把锁里，否则完成回调可能拿到错位组合 */
+                /* (名字, 下载id) 成对写入必须在同一把锁里：enqueue 先落到局部变量，
+                   成功后才一起更新；enqueue 抛异常时旧 (名字,id) 对保持完整 */
                 synchronized (downloadLock) {
+                    long newId = dm.enqueue(req);
                     lastApkName = name;
-                    lastDownloadId = dm.enqueue(req);
+                    lastDownloadId = newId;
                 }
                 registerDownloadReceiver();
                 return "ok";
