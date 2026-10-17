@@ -82,11 +82,16 @@ def changelog(tag):
 
 
 def find_release(tag):
-    st, items = api('GET', '/repos/%s/%s/releases?per_page=30' % (OWNER, REPO))
+    """优先用 tags 精确查询：列表接口分页，老 tag（v1.0）早已翻出第一页，
+    以前只翻 30 条会导致「找不到 → 又去创建 → 422 already_exists」。"""
+    st, it = api('GET', '/repos/%s/%s/releases/tags/%s' % (OWNER, REPO, urllib.parse.quote(tag)))
+    if st == 200 and isinstance(it, dict) and it.get('tag_name') == tag:
+        return it
+    st, items = api('GET', '/repos/%s/%s/releases?per_page=100' % (OWNER, REPO))
     if st == 200:
-        for it in items:
-            if it.get('tag_name') == tag:
-                return it
+        for it2 in items:
+            if it2.get('tag_name') == tag:
+                return it2
     return None
 
 
@@ -133,9 +138,21 @@ def cmd_sync():
             st, res = api('POST', '/repos/%s/%s/releases' % (OWNER, REPO),
                           {'tag_name': tag, 'name': name, 'body': body,
                            'draft': False, 'prerelease': False})
-            print('  %s 发行版 %s 已创建（HTTP %s）%s' % ('✓' if st in (200, 201) else '✗', tag, st,
-                                                     '' if st in (200, 201) else str(res)[:200]))
-            rel = res
+            if st == 422:
+                # 并发/分页漏查时说"已存在"：重新取一次，改成更新
+                rel2 = find_release(tag)
+                if rel2:
+                    st, res = api('PATCH', '/repos/%s/%s/releases/%s' % (OWNER, REPO, rel2['id']),
+                                  {'name': name, 'body': body})
+                    print('  %s 发行版 %s 已存在，改为更新（HTTP %s）'
+                          % ('✓' if st == 200 else '✗', tag, st))
+                    rel = rel2
+                else:
+                    print('  ✗ 发行版 %s 创建失败（HTTP 422）%s' % (tag, str(res)[:200]))
+            else:
+                print('  %s 发行版 %s 已创建（HTTP %s）%s' % ('✓' if st in (200, 201) else '✗', tag, st,
+                                                         '' if st in (200, 201) else str(res)[:200]))
+                rel = res
         if st not in (200, 201):
             bad += 1
             continue
