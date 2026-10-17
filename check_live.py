@@ -67,7 +67,8 @@ def say(ok_flag, text):
 
 local_page = open(PAGE, 'rb').read()
 local_ver = open('release/version.txt', encoding='utf-8').read().strip()
-app_v = re.search(r"var APP_VERSION = '([^']+)'", local_page.decode('utf-8')).group(1)
+_app_m = re.search(r"var APP_VERSION = '([^']+)'", local_page.decode('utf-8'))
+app_v = _app_m.group(1) if _app_m else '?'
 _tag = re.search(r"var RELEASE_TAG = '([^']+)'", local_page.decode('utf-8'))
 tag = _tag.group(1) if _tag else app_v
 
@@ -111,7 +112,14 @@ _ver_body, ok_ver = get_fresh(RAW + 'version.txt', local_ver)
 live_ver = (_ver_body or b'').decode('utf-8', 'replace').strip()
 say(ok_ver, '线上 version.txt 与本地一致：%s' % live_ver[:80])
 m = re.search(r'\{.*\}', live_ver, re.S)
-live_v = json.loads(m.group(0))['v'] if m else '?'
+live_v = '?'
+if m:
+    # 线上返回的 JSON 可能残缺：解析不出就按 '?' 计一条 bad，不能让脚本自己崩掉
+    try:
+        _lv = json.loads(m.group(0))
+        live_v = _lv.get('v', '?') if isinstance(_lv, dict) else '?'
+    except Exception:
+        live_v = '?'
 say(live_v == app_v, '线上版本号 %s == 页面 APP_VERSION %s' % (live_v, app_v))
 
 # 发布后必须同步更新 README（用户要求，也踩过：README 落后过两版）——这里机械校验，不靠记性
@@ -126,7 +134,12 @@ mp = re.search(r'\{.*\}', live_prog, re.S)
 prog = {}
 prog_tag = tag
 if mp:
-    prog = json.loads(mp.group(0))
+    try:
+        _pj = json.loads(mp.group(0))
+        prog = _pj if isinstance(_pj, dict) else {}
+    except Exception:
+        prog = {}
+if prog:
     say(prog.get('exe') == shell_ver and prog.get('apk') == apk_manifest_ver,
         'program.txt 里的程序本体版本 == 壳版本（exe %s / apk %s，app.py %s / manifest %s）'
         % (prog.get('exe'), prog.get('apk'), shell_ver, apk_manifest_ver))
