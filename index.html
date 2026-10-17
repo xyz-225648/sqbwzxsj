@@ -1412,13 +1412,13 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.4.4';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.4.5';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 页面热更新（version.txt）的发行版 tag：主要用来取 index.html 附件，跟页面版本号走。
    程序本体（exe/apk）的下载 tag 在 program.txt 里单独记（= 程序本体版本），两者分开算；
    只有 program.txt 拿不到时才拿 RELEASE_TAG 兜底。 */
-var RELEASE_TAG = 'v2.4.4';
+var RELEASE_TAG = 'v2.4.5';
 var latestInfo = null;
 /* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
 var SHELL_SEEN_KEY = 'sqzy-seen-shell';
@@ -2385,12 +2385,14 @@ function initSettings(){
     var bsh = document.getElementById('andShare');
     if (bsh) bsh.addEventListener('click', function(){
       var r = 'no-bridge';
+      var info = programInfo || latestInfo;
       try{
         if (window.SQZY_ANDROID && window.SQZY_ANDROID.shareApk)
-          r = window.SQZY_ANDROID.shareApk();
+          r = window.SQZY_ANDROID.shareApk(apkMirrors(info).join('\n'));
       }catch(e){ r = 'fail'; }
-      inPageToast(r === 'ok' ? '选个应用发出去就行' : '分享没打开',
-                  r === 'ok' ? '发的是本机这份安装包，对方点开就能装' : '可以先用「一键下载安装包」存一份再手动发');
+      if (r === 'ok') inPageToast('选个应用发出去就行', '发的是本机这份安装包，对方点开就能装');
+      else if (r === 'downloading') inPageToast('本机这份读不出来，正在下载安装包…', '下完会自动弹出分享，稍等几秒');
+      else inPageToast('分享没打开', '可以先用「一键下载安装包」存一份再手动发');
     });
     refreshAnd();
     document.addEventListener('visibilitychange', function(){ if (!document.hidden) refreshAnd(); });
