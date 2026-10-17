@@ -60,11 +60,66 @@ def check(label, cond, why=''):
     return bool(cond)
 
 
-def windows_of_title():
+def _process_tree(root):
+    """root 及其子孙进程 id。onefile exe 的窗口属于子进程，只认 root 自己会漏；
+    多认子孙不会劫持到无关窗口（无关进程不在这个树里）。"""
+    ids = {root}
+    TH32CS_SNAPPROCESS = 0x2
+    class PROCESSENTRY32W(ctypes.Structure):
+        _fields_ = [
+            ('dwSize', wintypes.DWORD),
+            ('cntUsage', wintypes.DWORD),
+            ('th32ProcessID', wintypes.DWORD),
+            ('th32DefaultHeapID', ctypes.POINTER(ctypes.c_ulong)),
+            ('th32ModuleID', wintypes.DWORD),
+            ('cntThreads', wintypes.DWORD),
+            ('th32ParentProcessID', wintypes.DWORD),
+            ('pcPriClassBase', ctypes.c_long),
+            ('dwFlags', wintypes.DWORD),
+            ('szExeFile', ctypes.c_wchar * 260)]
+    try:
+        snap = k32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+        if not snap or snap == -1:
+            return ids
+        entry = PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+        if not k32.Process32FirstW(snap, ctypes.byref(entry)):
+            k32.CloseHandle(snap)
+            return ids
+        parents = {}
+        while True:
+            parents[entry.th32ProcessID] = entry.th32ParentProcessID
+            if not k32.Process32NextW(snap, ctypes.byref(entry)):
+                break
+        k32.CloseHandle(snap)
+        for pid in parents:
+            cur = pid
+            seen = set()
+            # 带 seen 防环：系统进程链会走到 PID 0（Idle 进程的父进程是它自己），死循环就卡死整个测试
+            while cur in parents and cur not in seen:
+                seen.add(cur)
+                if cur == root:
+                    ids.add(pid)
+                    break
+                cur = parents[cur]
+    except Exception:
+        pass
+    return ids
+
+
+def windows_of_title(pid=None):
+    """按标题枚举窗口；给了 pid 就只认该进程（及其子孙）的窗口，
+    免得把用户桌面上恰好同标题的真实窗口劫持成测试对象。"""
+    allow = _process_tree(pid) if pid is not None else None
     found = []
     CB = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
 
     def cb(hwnd, _):
+        if allow is not None:
+            wpid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(wpid))
+            if wpid.value not in allow:
+                return True
         n = user32.GetWindowTextLengthW(hwnd)
         if n:
             buf = ctypes.create_unicode_buffer(n + 1)
@@ -95,8 +150,20 @@ def cleanup_helpers():
     try:
         pid = io.open(os.path.join(CACHE, 'app.pid'), encoding='utf-8').read().strip()
         if pid.isdigit():
-            subprocess.run(['taskkill', '/F', '/PID', pid], capture_output=True, timeout=30)
-            print('    · 清掉上次遗留的实例 pid=%s（app.pid）' % pid)
+            # PID 可能早被系统复用给别的程序：杀之前用 tasklist 核对镜像名，
+            # 只有 python / 本程序 exe（名字带「宿迁」）才动手，避免误杀无辜进程
+            tl = subprocess.run(['tasklist', '/FI', 'PID eq %s' % pid, '/FO', 'CSV', '/NH'],
+                                capture_output=True, text=True, timeout=30).stdout
+            if tl and 'No tasks are running' in tl:
+                tl = ''      # tasklist 查不到：进程已经不在了，同样没有可杀的对象
+            name = tl.split(',')[0].strip().strip('"') if tl.strip() else ''
+            if not name:
+                print('    · 跳过 pid=%s（tasklist 里已经没有这个进程）' % pid)
+            elif 'python' in name.lower() or '宿迁' in name:
+                subprocess.run(['taskkill', '/F', '/PID', pid], capture_output=True, timeout=30)
+                print('    · 清掉上次遗留的实例 pid=%s（app.pid，镜像名 %s）' % (pid, name or '?'))
+            else:
+                print('    · 跳过 pid=%s（镜像名 %r 不像本程序，PID 可能被复用了）' % (pid, name))
     except Exception:
         pass
     # 2) 占着 51900-51904 的助手进程
@@ -258,13 +325,13 @@ def main():
             backup = f.read()
     write_state(always_on_top=False, close_mode='tray', show=0)
 
-    p1 = p2 = p4 = p5 = None
+    p1 = p2 = p3 = p4 = p5 = None
     had = None
     touched_run = False
     try:
         print('  [桌面外壳 · %s]' % label)
         p1 = launch(cmd)
-        hwnd = wait_for(lambda: (windows_of_title() or [None])[0], 40)
+        hwnd = wait_for(lambda: (windows_of_title(p1.pid) or [None])[0], 40)
         if not hwnd:
             bad('窗口能开出来', '40 秒没等到标题为「%s」的窗口' % TITLE)
             return 1
@@ -330,7 +397,8 @@ def main():
         call_state(port, 'top=1')
         wait_for(lambda: is_topmost(hwnd), 8)
         p3 = launch(cmd)
-        wait_for(lambda: p3.poll() is not None, 12)
+        exited3 = wait_for(lambda: p3.poll() is not None, 12)
+        check('第三个进程自己退出', exited3, 'p3 12 秒还没退出（返回码 %s）' % p3.poll())
         check('唤回前台不会丢掉置顶状态', wait_for(lambda: is_topmost(hwnd), 5),
               '置顶被清掉了')
 
@@ -397,7 +465,7 @@ def main():
             restore_run(had)
             print('    · 自启动项已还原')
         # 能好好退就好好退：硬杀会把它拉起的助手进程留成孤儿
-        for p in (p1, p2, p4, p5):
+        for p in (p1, p2, p3, p4, p5):
             if not p or p.poll() is not None:
                 continue
             try:

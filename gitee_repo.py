@@ -34,13 +34,14 @@
 说明文件用 Markdown；给了章节标题（例如 "v2.0.1"）就只取那一节，方便直接拿 CHANGELOG.md 当公告。
 令牌：环境变量 GITEE_TOKEN，或同目录下的 .gitee_token（不会提交到仓库）。
 """
-import base64, io, json, os, sys, urllib.error, urllib.parse, urllib.request
+import base64, io, json, os, re, sys, urllib.error, urllib.parse, urllib.request
 
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
 
+HERE = os.path.dirname(os.path.abspath(__file__))
 OWNER, REPO, BRANCH = 'xyz-225648', 'sqbwzxsj', 'master'
 API = 'https://gitee.com/api/v5/repos/%s/%s' % (OWNER, REPO)
 HELP = __doc__
@@ -48,8 +49,9 @@ HELP = __doc__
 
 def get_token():
     t = (os.environ.get('GITEE_TOKEN') or '').strip()
-    if not t and os.path.exists('.gitee_token'):
-        t = io.open('.gitee_token', encoding='utf-8').read().strip()
+    tf = os.path.join(HERE, '.gitee_token')      # 按脚本所在目录找，不依赖 CWD
+    if not t and os.path.exists(tf):
+        t = io.open(tf, encoding='utf-8').read().strip()
     if not t:
         print('  没有令牌：请设置 GITEE_TOKEN 或写 .gitee_token')
         sys.exit(2)
@@ -138,7 +140,7 @@ def read_body(spec, section=None):
 def file_cmds(tok, args, branch=BRANCH):
     cmd = args[0]
     if cmd == 'list':
-        st, items = req('GET', API + '/contents/?ref=' + BRANCH, tok)
+        st, items = req('GET', API + '/contents/?ref=' + urllib.parse.quote(branch), tok)
         if st != 200:
             print('  ✗ HTTP %s %s' % (st, str(items)[:200]))
             return 1
@@ -241,6 +243,8 @@ def branch_cmds(tok, args):
             print('  %-30s %s' % (it.get('name'), (it.get('commit') or {}).get('sha', '')[:8]))
         return 0
     if sub == 'new':
+        if len(args) < 3:
+            print(HELP); return 2
         name = args[2]
         refs = args[3] if len(args) > 3 else BRANCH
         st, res = req('POST', API + '/branches', tok,
@@ -265,6 +269,8 @@ def pr_cmds(tok, args):
                                              (it.get('head') or {}).get('ref'), it.get('title')))
         return 0
     if sub == 'view':
+        if len(args) < 3:
+            print(HELP); return 2
         st, it = req('GET', API + '/pulls/%s' % args[2], tok)
         if st != 200:
             print('  ✗ HTTP %s %s' % (st, str(it)[:200])); return 1
@@ -276,6 +282,8 @@ def pr_cmds(tok, args):
             print(chr(10).join('    ' + l for l in it['body'].splitlines()[:24]))
         return 0
     if sub == 'new':
+        if len(args) < 5:
+            print(HELP); return 2
         head, title, spec = args[2], args[3], args[4]
         section = args[5] if len(args) > 5 else None
         body = read_body(spec, section)
@@ -288,12 +296,16 @@ def pr_cmds(tok, args):
         print('  ✗ HTTP %s %s' % (st, str(res)[:260]))
         return 1
     if sub == 'comment':
+        if len(args) < 4:
+            print(HELP); return 2
         st, res = req('POST', API + '/pulls/%s/comments' % args[2], tok,
                       {'access_token': tok, 'body': read_body(args[3])})
         if st in (200, 201):
             print('  ✓ 已在 PR #%s 下留言' % args[2]); return 0
         print('  ✗ HTTP %s %s' % (st, str(res)[:220])); return 1
     if sub == 'approve':
+        if len(args) < 3:
+            print(HELP); return 2
         # 仓库开了「合并前必须通过审查 / 测试」两道门槛，缺一条合并就 405：
         #   .../review -> 点「审查通过」   .../test -> 点「测试通过」
         bad = 0
@@ -306,6 +318,8 @@ def pr_cmds(tok, args):
                 print('  ✗ %s HTTP %s %s' % (name, st, str(res)[:160])); bad += 1
         return 1 if bad else 0
     if sub == 'merge':
+        if len(args) < 3:
+            print(HELP); return 2
         payload = {'access_token': tok, 'merge_method': 'merge'}
         if len(args) > 3:
             payload['title'] = args[3]
@@ -321,6 +335,8 @@ def pr_cmds(tok, args):
 
 def issue_cmds(tok, args):
     sub = args[1] if len(args) > 1 else 'view'
+    if len(args) < 3:
+        print(HELP); return 2
     num = args[2]
     if sub == 'view':
         st, it = req('GET', API + '/issues/%s' % num, tok)
@@ -330,6 +346,8 @@ def issue_cmds(tok, args):
         print('  %s' % it.get('html_url'))
         return 0
     if sub == 'comment':
+        if len(args) < 4:
+            print(HELP); return 2
         st, res = req('POST', API + '/issues/%s/comments' % num, tok,
                       {'access_token': tok, 'body': read_body(args[3])})
         if st in (200, 201):
@@ -362,6 +380,8 @@ def release_cmds(tok, args):
         return 0
 
     if sub == 'assets':
+        if len(args) < 3:
+            print(HELP); return 2
         rel = release_of(tok, args[2])
         if not rel:
             print('  ✗ 找不到 tag=%s 的发行版' % args[2]); return 1
@@ -371,6 +391,8 @@ def release_cmds(tok, args):
         return 0
 
     if sub in ('new', 'edit'):
+        if len(args) < 5:
+            print(HELP); return 2
         tag, name, bodyfile = args[2], args[3], args[4]
         section = args[5] if len(args) > 5 else None
         body = section_of(bodyfile, section) if section else io.open(bodyfile, encoding='utf-8').read()
@@ -393,13 +415,20 @@ def release_cmds(tok, args):
         return 1
 
     if sub == 'upload':
+        if len(args) < 4:
+            print(HELP); return 2
         tag = args[2]
         rel = release_of(tok, tag)
         if not rel:
             print('  ✗ 找不到 tag=%s 的发行版' % tag); return 1
         targets = []
         for a in args[3:]:
-            local, _, nm = a.partition(':')
+            # 盘符（D:\... / C:/...）里的冒号不是「本地:附件名」分隔符，整体当路径；
+            # 否则 D:\xxx 会被拆成 'D' 和 '\xxx'，上传找不着文件
+            if re.match(r'^[A-Za-z]:[\\/]', a):
+                local, nm = a, ''
+            else:
+                local, _, nm = a.partition(':')
             targets.append((local, nm or os.path.basename(local)))
         want = set(n for _, n in targets)
         st, olds = req('GET', API + '/releases/%s/attach_files' % rel['id'], tok)

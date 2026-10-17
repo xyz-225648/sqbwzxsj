@@ -84,9 +84,13 @@ def build(html_path, page_ver, stamp):
     for kind, name in BASES.items():
         info[kind + 'Url'] = base + urllib.parse.quote(name)   # 资产名必须百分号编码，中文名不编码会让壳的请求在 ASCII 编码处炸掉
         local = os.path.join(ROOT, name)
+        # sha/size 各自缺省：本地没有这个包就显式写 null（parse_program 按「有值才校验」解析）
         if os.path.exists(local):
             info[kind + 'Sha256'] = sha256_of(local)
             info[kind + 'Size'] = os.path.getsize(local)
+        else:
+            info[kind + 'Sha256'] = None
+            info[kind + 'Size'] = None
     # 线路要在 sha256 算完之后再拼（?t= 用的是 apk 的 sha 前缀，拼早了就是空的）
     def jd(host, ref):
         return 'https://%s/gh/xyz-225648/sqbwzxsj@%s/%s' % (host, ref, path)
@@ -111,7 +115,7 @@ def main():
     io.open(os.path.join(out, 'program.txt'), 'w', encoding='utf-8', newline=chr(10)).write(text)
     print(text.strip())
     for kind in BASES:
-        if kind + 'Sha256' in info:
+        if info.get(kind + 'Sha256'):
             print('   %s sha256=%s  %d 字节' % (kind, info[kind + 'Sha256'][:16] + '…', info[kind + 'Size']))
         else:
             print('   ⚠ 本地没有 %s，program.txt 里只有版本和直链（一键更新会退回手动下载）' % BASES[kind])

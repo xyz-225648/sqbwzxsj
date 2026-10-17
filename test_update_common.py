@@ -76,6 +76,16 @@ class TestParseProgram(unittest.TestCase):
         info = parse_program(GOOD_PROGRAM)
         self.assertEqual(info['exe'], 'v2.4.3')
         self.assertEqual(info['apk'], 'v2.4.3')
+        # make_program_txt 的半量产物：本地缺哪个包，哪个包的 sha/size 就缺省（null），
+        # parse_program 必须放行；有值的字段仍然正常带回。
+        partial = GOOD_PROGRAM.replace('"apkSha256": "' + 'b' * 64 + '", ', '')
+        partial = partial.replace('"apkSize": 144232, ', '')
+        info = parse_program(partial)
+        self.assertIsNotNone(info)
+        self.assertIsNone(info.get('apkSha256'))
+        self.assertIsNone(info.get('apkSize'))
+        self.assertEqual(info['exeSha256'], 'a' * 64)
+        self.assertEqual(info['exeSize'], 26675535)
 
     def test_bad_domain(self):
         bad = GOOD_PROGRAM.replace('https://gitee.com/', 'https://evil.com/')
@@ -83,6 +93,9 @@ class TestParseProgram(unittest.TestCase):
 
     def test_bad_sha(self):
         bad = GOOD_PROGRAM.replace('a' * 64, 'z' * 63)
+        self.assertIsNone(parse_program(bad))
+        # 缺省可以，给了值就必须是合法 sha256：坏值照样拒绝
+        bad = GOOD_PROGRAM.replace('"apkSha256": "' + 'b' * 64 + '", ', '"apkSha256": "zzz", ')
         self.assertIsNone(parse_program(bad))
 
     def test_bad_size(self):
