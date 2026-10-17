@@ -1971,6 +1971,12 @@ function shellAssetUrl(info, kind){
     encodeURIComponent(kind === 'apk' ? '宿迁职业技术学院作息时间表.apk' : '宿迁职业技术学院作息时间表.exe');
 }
 function openExternal(url){
+  /* 安卓 WebView 没开多窗口支持时 window.open 默认什么都不做：location.href 会触发
+     安卓壳 shouldOverrideUrlLoading 的「http(s) → 系统浏览器」外抛通道，优先走它 */
+  if (isAndroid()){
+    try{ location.href = url; }catch(e){ try{ window.open(url, '_blank'); }catch(_){} }
+    return;
+  }
   /* 桌面版的页面在 WebView 里，点外链得让壳用系统浏览器打开 */
   var base = apiBase();
   if (base){
@@ -2322,6 +2328,10 @@ function initSettings(){
           '<button class="settest" id="setTest" type="button">发一条测试通知</button>' +
           '<div class="setnote" id="setNote"></div>' +
           '<div class="setsec">关于</div>' +
+          '<div class="setrow" style="gap:14px">' +
+            '<a href="https://github.com/xyz-225648/sqbwzxsj" id="aboutGh" style="font-size:12px;color:#1d4ed8;text-decoration:none">GitHub 项目主页</a>' +
+            '<a href="https://gitee.com/xyz-225648/sqbwzxsj" id="aboutGitee" style="font-size:12px;color:#c2410c;text-decoration:none">Gitee 项目主页</a>' +
+          '</div>' +
           '<div class="setrow" style="align-items:flex-start;gap:10px">' +
             '<div style="flex:1;min-width:0">' +
               '<b style="font-size:13px">宿迁职业技术学院作息时间表</b>' +
@@ -2457,6 +2467,13 @@ function initSettings(){
   });
   var aboutBtn = document.getElementById('aboutCheck');
   if (aboutBtn) aboutBtn.addEventListener('click', function(){ checkAppUpdate(true); });
+  ['aboutGh', 'aboutGitee'].forEach(function(id){
+    var a = document.getElementById(id);
+    if (a) a.addEventListener('click', function(e){
+      try{ e.preventDefault(); }catch(_){}
+      openExternal(a.getAttribute('href'));
+    });
+  });
   function sendTestNotify(){
     var d = new Date(), m = d.getHours() * 60 + d.getMinutes();
     var i = notifyCfg.tracks.indexOf(true); if (i < 0) i = 0;
