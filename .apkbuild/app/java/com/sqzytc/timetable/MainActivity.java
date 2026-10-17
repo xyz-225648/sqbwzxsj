@@ -9,6 +9,7 @@ import android.app.PendingIntent;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Intent;
+import android.content.ClipData;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.net.Uri;
@@ -142,16 +143,24 @@ public class MainActivity extends Activity {
                 File out = new File(dir, name);
                 File src = new File(Environment.getExternalStoragePublicDirectory(
                         Environment.DIRECTORY_DOWNLOADS), name);
-                if (!src.exists()) src = new File(getPackageCodePath());
+                /* 下载目录里可能是早先失败留下的 0 字节占位文件 —— 那就退回"正在运行的这份 apk"，
+                   否则分享出去的就是空文件（接收方报「文件不存在 / 空文件」）。 */
+                if (!src.exists() || src.length() < 1024) src = new File(getPackageCodePath());
                 copyFile(src, out);
+                if (out.length() < 1024) return "empty";
+                final Uri uri = Uri.parse("content://com.sqzytc.timetable.files/" + name);
                 final Intent it = new Intent(Intent.ACTION_SEND);
                 it.setType("application/vnd.android.package-archive");
-                it.putExtra(Intent.EXTRA_STREAM,
-                        Uri.parse("content://com.sqzytc.timetable.files/" + name));
+                it.putExtra(Intent.EXTRA_STREAM, uri);
+                /* 除了 EXTRA_STREAM，还要把 Uri 放进 ClipData 并显式授权：
+                   微信 / QQ 这类应用是异步去拉内容的，只带 flag 会读不到（表现为空文件）。 */
+                it.setClipData(ClipData.newRawUri("apk", uri));
                 it.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                 runOnUiThread(new Runnable() {
                     public void run() {
-                        startActivity(Intent.createChooser(it, "把安装包发给"));
+                        Intent chooser = Intent.createChooser(it, "把安装包发给");
+                        chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        startActivity(chooser);
                     }
                 });
                 return "ok";
