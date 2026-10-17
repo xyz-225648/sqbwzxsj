@@ -106,6 +106,16 @@ class TestParseProgram(unittest.TestCase):
         bad = GOOD_PROGRAM.replace('https://cdn.jsdelivr.net', 'http://insecure')
         self.assertIsNone(parse_program(bad))
 
+    def test_null_literal_sha_size_allowed(self):
+        # 锁定 json null 字面量路径：make_program_txt 缺包时写 "apkSha256": null / "apkSize": null，
+        # parse_program 对 null 与缺键一视同仁（缺省跳过）
+        prog = GOOD_PROGRAM.replace('"apkSha256": "' + 'b' * 64 + '"', '"apkSha256": null')
+        prog = prog.replace('"apkSize": 144232', '"apkSize": null')
+        info = parse_program(prog)
+        self.assertIsNotNone(info)
+        self.assertIsNone(info.get('apkSha256'))
+        self.assertIsNone(info.get('apkSize'))
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
