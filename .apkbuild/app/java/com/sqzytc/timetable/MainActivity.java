@@ -36,8 +36,10 @@ import java.net.URL;
 
 public class MainActivity extends Activity {
     /* 一键更新：记住最近一次下载的 id，完成时自动拉起安装界面 */
-    private long lastDownloadId = -1L;
-    private String lastApkName = null;
+    /* 下载桥方法在 WebView 的 JavaBridge 线程写这两个值、主线程接收器读，
+       跨线程共享必须 volatile，否则新值可能一直不落主线程的缓存 */
+    private volatile long lastDownloadId = -1L;
+    private volatile String lastApkName = null;
     private BroadcastReceiver dlDone = null;
 
     // ==================== 自动更新配置 ====================
@@ -45,6 +47,8 @@ public class MainActivity extends Activity {
     // 例：private static final String UPDATE_BASE = "https://gitee.com/zhangsan/sqzy-timetable/raw/master/";
     private static final String UPDATE_BASE = "https://gitee.com/xyz-225648/sqbwzxsj/raw/master/";
     private static final int TIMEOUT_MS = 8000;
+    /* 桥 fetchUrl 的单次读取上限：超过 512KB 直接放弃，防止异常大响应撑爆内存 */
+    private static final int MAX_FETCH_BYTES = 512 * 1024;
     private static final String UA =
             "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) " +
             "Chrome/120.0.0.0 Mobile Safari/537.36";
@@ -126,7 +130,15 @@ public class MainActivity extends Activity {
                     if (c.getResponseCode() != 200) {
                         return null;
                     }
-                    return readAll(c.getInputStream(), "UTF-8");
+                    /* 302 落地后复核最终主机：只允许 gitee.com 与它的 raw 镜像，
+                       防止被重定向带到任意第三方地址 */
+                    java.net.URL finalUrl = c.getURL();
+                    String host = (finalUrl == null) ? null : finalUrl.getHost();
+                    if (host == null || (!host.equals("gitee.com")
+                            && !host.equals("raw.giteeusercontent.com"))) {
+                        return null;
+                    }
+                    return readAllCapped(c.getInputStream(), "UTF-8", MAX_FETCH_BYTES);
                 } finally {
                     c.disconnect();
                 }
@@ -173,19 +185,22 @@ public class MainActivity extends Activity {
                 final String name = "sqzy-timetable-" + version() + ".apk";
                 File dir = new File(getCacheDir(), "share");
                 if (!dir.exists() && !dir.mkdirs()) return "fail";
-                final File out = new File(dir, name);
+                /* 并发重入时两路分享会写同一个 out/out.part：文件名挂 nanoTime 后缀，
+                   每次调用各写各的，互不干扰 */
+                final File out = new File(dir, name + "." + System.nanoTime() + ".apk");
 
-                /* 1) 下载目录里那份（可能早先是 0 字节占位文件）—— 只认大于 1KB 的 */
+                /* 1) 下载目录里那份（可能早先是 0 字节占位文件）—— 只有 usable 才用；
+                   签名不在这里验：自家包 + 目标机系统安装器会再验一次，保持简单 */
                 File dl = new File(Environment.getExternalStoragePublicDirectory(
                         Environment.DIRECTORY_DOWNLOADS), name);
-                if (dl.exists() && dl.length() >= 1024 && dl.canRead()) {
+                if (usable(dl)) {
                     try { copyFile(dl, out); } catch (Exception ignored) { }
                 }
                 /* 2) 正在运行的这份 apk */
                 if (!usable(out)) {
                     try { copyFile(new File(getPackageCodePath()), out); } catch (Exception ignored) { }
                 }
-                if (usable(out)) { sendApk(out, name); return "ok"; }
+                if (usable(out)) { sendApk(out); return "ok"; }
 
                 /* 3) 本机这份分享不出去（读不到/复制失败）→ 现下一份再分享 */
                 final String[] list = (urls == null ? "" : urls).split("\n");
@@ -199,7 +214,7 @@ public class MainActivity extends Activity {
                                 downloadTo(u, out);
                                 if (usable(out)) {
                                     if (wantSha.length() == 0 || sha256Of(out).equals(wantSha)) {
-                                        sendApk(out, name);
+                                        sendApk(out);
                                         return;
                                     }
                                     /* 哈希对不上：删掉这份，换下一条镜像重试 */
@@ -207,6 +222,8 @@ public class MainActivity extends Activity {
                                 }
                             } catch (Exception ignored) { }
                         }
+                        /* 全部镜像都失败：清掉这次残留的临时文件，别在缓存里攒包 */
+                        try { out.delete(); } catch (Exception ignored) { }
                         toastOnUi("安装包下载失败，请先用「一键下载安装包」存一份");
                     }
                 }).start();
@@ -216,8 +233,9 @@ public class MainActivity extends Activity {
             }
         }
 
+        /* apk 至少 100KB：半截下载 / 被截断的包不能过这道门槛（签名校验留给系统安装器） */
         private boolean usable(File f) {
-            return f != null && f.exists() && f.canRead() && f.length() >= 1024;
+            return f != null && f.exists() && f.canRead() && f.length() >= 100 * 1024;
         }
 
         /** 兜底：只有壳自己加载的可信页面才允许用下载/分享/读网络这些桥方法 */
@@ -250,8 +268,10 @@ public class MainActivity extends Activity {
             }
         }
 
-        private void sendApk(final File f, final String name) {
-            final Uri uri = Uri.parse("content://com.sqzytc.timetable.files/" + name);
+        private void sendApk(final File f) {
+            /* URI 用实际落盘的文件名（shareApk 每次调用文件名都带 nanoTime 后缀） */
+            final Uri uri = Uri.parse("content://com.sqzytc.timetable.files/"
+                    + Uri.encode(f.getName()));
             final Intent it = new Intent(Intent.ACTION_SEND);
             it.setType("application/vnd.android.package-archive");
             it.putExtra(Intent.EXTRA_STREAM, uri);
@@ -261,9 +281,14 @@ public class MainActivity extends Activity {
             it.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             runOnUiThread(new Runnable() {
                 public void run() {
-                    Intent chooser = Intent.createChooser(it, "把安装包发给");
-                    chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                    startActivity(chooser);
+                    /* 下载线程可能跑到 Activity 销毁之后：死掉的窗口不拉 chooser */
+                    if (!alive || isFinishing()) return;
+                    try {
+                        Intent chooser = Intent.createChooser(it, "把安装包发给");
+                        chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        startActivity(chooser);
+                    } catch (Exception ignored) {
+                    }
                 }
             });
         }
@@ -271,6 +296,7 @@ public class MainActivity extends Activity {
         private void toastOnUi(final String msg) {
             runOnUiThread(new Runnable() {
                 public void run() {
+                    if (!alive || isFinishing()) return;
                     try { android.widget.Toast.makeText(MainActivity.this, msg, android.widget.Toast.LENGTH_LONG).show(); }
                     catch (Exception ignored) { }
                 }
@@ -396,11 +422,32 @@ public class MainActivity extends Activity {
                                 DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
                                 DownloadManager.Query q = new DownloadManager.Query().setFilterById(id);
                                 android.database.Cursor cur = dm.query(q);
-                                if (cur == null || !cur.moveToFirst()) return;
-                                int st = cur.getInt(cur.getColumnIndex(DownloadManager.COLUMN_STATUS));
-                                cur.close();
-                                if (st != DownloadManager.STATUS_SUCCESSFUL) return;
-                                openInstaller();
+                                if (cur == null) return;
+                                try {
+                                    if (!cur.moveToFirst()) return;
+                                    int st = cur.getInt(cur.getColumnIndex(DownloadManager.COLUMN_STATUS));
+                                    if (st != DownloadManager.STATUS_SUCCESSFUL) return;
+                                } finally {
+                                    cur.close();
+                                }
+                                /* 复制几十 MB 的包不能挡主线程：后台线程备好安装 Intent，
+                                   主线程只负责拉起安装器（被系统拦下则退回通知） */
+                                new Thread(new Runnable() {
+                                    public void run() {
+                                        final Intent it = prepareInstallIntent();
+                                        if (it == null) return;
+                                        runOnUiThread(new Runnable() {
+                                            public void run() {
+                                                if (!alive || isFinishing()) return;
+                                                try {
+                                                    startActivity(it);
+                                                } catch (Exception t) {
+                                                    postInstallReadyNotification(it);
+                                                }
+                                            }
+                                        });
+                                    }
+                                }).start();
                             } catch (Exception ignored) { }
                         }
                     };
@@ -409,20 +456,6 @@ public class MainActivity extends Activity {
                 if (Build.VERSION.SDK_INT >= 33) registerReceiver(dlDone, f, Context.RECEIVER_NOT_EXPORTED);
                 else registerReceiver(dlDone, f);
             } catch (Exception ignored) { }
-        }
-
-        private void openInstaller() {
-            Intent it = prepareInstallIntent();
-            if (it == null) return;
-            try {
-                /* 下载完直接拉起系统安装器，不做任何预先跳转设置的动作。
-                   若系统因「未允许安装未知应用」拦截，由系统安装器自己给用户引导。 */
-                startActivity(it);
-            } catch (Exception t) {
-                /* 安卓 10+ 后台拉起安装界面可能被系统拦下：退一步发一条
-                   「新版本已下载完成」通知，用户点一下就能继续安装。 */
-                postInstallReadyNotification();
-            }
         }
 
         /** 把下载目录里的 apk 复制到 cacheDir/share，返回能拉起系统安装器的 Intent */
@@ -445,8 +478,8 @@ public class MainActivity extends Activity {
             }
         }
 
-        private void postInstallReadyNotification() {
-            Intent it = prepareInstallIntent();
+        /** 拉起安装器失败的回退：用已经备好的 Intent（包已复制到缓存）发通知，不再重复复制 */
+        private void postInstallReadyNotification(Intent it) {
             if (it == null) return;
             try {
                 ensureChannel();
@@ -773,6 +806,22 @@ public class MainActivity extends Activity {
         return new String(bo.toByteArray(), charset);
     }
 
+    /* 桥 fetchUrl 专用：累计超过 maxBytes 返回 null（比 readAll 多一个封顶） */
+    private static String readAllCapped(InputStream in, String charset, int maxBytes) throws Exception {
+        ByteArrayOutputStream bo = new ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        int n;
+        int total = 0;
+        while ((n = in.read(buf)) > 0) {
+            total += n;
+            if (total > maxBytes) {
+                return null;
+            }
+            bo.write(buf, 0, n);
+        }
+        return new String(bo.toByteArray(), charset);
+    }
+
     private static String sha256Of(File f) {
         try {
             java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
@@ -833,12 +882,22 @@ public class MainActivity extends Activity {
         }
     }
 
+    /* 原子写：先落 .tmp 再 rename，避免写到一半进程被杀留下半截 index.html/version.txt */
     private static void writeText(File f, String text) {
+        File tmp = new File(f.getParentFile(), f.getName() + ".tmp");
         try {
-            FileOutputStream out = new FileOutputStream(f);
-            out.write(text.getBytes("UTF-8"));
-            out.close();
-        } catch (Exception ignored) {
+            FileOutputStream out = new FileOutputStream(tmp);
+            try {
+                out.write(text.getBytes("UTF-8"));
+                out.flush();
+            } finally {
+                try { out.close(); } catch (Exception ignored) { }
+            }
+            if (!tmp.renameTo(f)) {
+                try { tmp.delete(); } catch (Exception ignored) { }
+            }
+        } catch (Exception t) {
+            try { tmp.delete(); } catch (Exception ignored) { }
         }
     }
 
@@ -862,6 +921,14 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         alive = false;
+        /* 与 registerDownloadReceiver 配对：漏注销会让接收器一直挂在系统上 */
+        try {
+            if (dlDone != null) {
+                unregisterReceiver(dlDone);
+            }
+        } catch (Exception ignored) {
+        }
+        dlDone = null;
         if (web != null) {
             ViewGroup p = (ViewGroup) web.getParent();
             if (p != null) {

@@ -35,11 +35,17 @@ public class ApkProvider extends ContentProvider {
     @Override
     public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
         String name = uri.getLastPathSegment();
-        if (name == null || name.contains("/") || name.contains("..")) {
+        if (badName(name)) {
             throw new FileNotFoundException("bad name");
         }
         File f = new File(new File(getContext().getCacheDir(), "share"), name);
         return ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY);
+    }
+
+    /* 路径校验：/ \\ 与 .. 一律拒绝，query 与 openFile 共用同一把尺子 */
+    private static boolean badName(String name) {
+        return name == null || name.length() == 0
+                || name.contains("/") || name.contains("\\") || name.contains("..");
     }
 
     @Override
@@ -49,7 +55,8 @@ public class ApkProvider extends ContentProvider {
            以前直接返回 null，它们就当「文件不存在」。这里如实返回。 */
         try {
             String name = uri.getLastPathSegment();
-            File f = new File(new File(getContext().getCacheDir(), "share"), name == null ? "" : name);
+            if (badName(name)) return null;
+            File f = new File(new File(getContext().getCacheDir(), "share"), name);
             if (!f.exists()) return null;
             String[] cols = new String[] {
                     OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE };
