@@ -421,7 +421,7 @@ if (/Android/i.test(navigator.userAgent || '')) document.documentElement.setAttr
 
   <div class="cards" id="cards"></div>
 
-  <footer><b>说明：</b>现在时间按本机时间计算，每 20 秒自动刷新；非教学日（周末、假期）请以学校实际通知为准。</footer>
+  <footer><b>说明：</b>现在时间按本机时间计算，每 30 秒自动刷新；非教学日（周末、假期）请以学校实际通知为准。</footer>
 </div>
 
 <button class="totop" id="toTop" type="button" aria-label="回到顶部" title="回到顶部">
@@ -537,7 +537,11 @@ function parseCalendar(text){
     var parts = line.split(/[\s,，]+/), key = parts[0], tpl = (parts[1] || '').toLowerCase();
     if (!/^\d{4}-\d{2}-\d{2}(~\d{4}-\d{2}-\d{2})?$/.test(key) || !SCHEDULES[tpl]){ bad++; return; }
     var _note = parts.slice(2).join(' ').trim();
-    if (key.indexOf('~') < 0){ table[key] = tpl; if (_note) notes[key] = _note; return; }
+    if (key.indexOf('~') < 0){
+      var d0 = new Date(key + 'T00:00:00');
+      if (isNaN(d0) || calKey(d0) !== key){ bad++; return; }
+      table[key] = tpl; if (_note) notes[key] = _note; return;
+    }
     var a = key.split('~'), d1 = new Date(a[0] + 'T00:00:00'), d2 = new Date(a[1] + 'T00:00:00');
     if (isNaN(d1) || isNaN(d2) || d2 < d1){ bad++; return; }
     for (var d = new Date(d1), g = 0; d <= d2 && g < 400; d.setDate(d.getDate() + 1), g++) {
@@ -548,6 +552,7 @@ function parseCalendar(text){
   return { table: table, notes: notes, bad: bad };
 }
 function applyCalendar(text){
+  if (!text && CAL_META.ok) return CAL_META;   /* 失败回包 null 时，别把壳已加载的校历清掉 */
   var r = parseCalendar(text || '');
   SPECIAL = r.table;
   SPECIAL_NOTE = r.notes || {};
@@ -564,6 +569,7 @@ function holidayCountdown(d){
      零额外数据维护。没配校历或没有 future 假期就返回 null。 */
   try{
     var keys = Object.keys(SPECIAL || {}).filter(function(k){
+      if (isNaN(new Date(k + 'T00:00:00'))) return false;
       var tpl = SPECIAL[k];
       if (tpl === 'holiday') return true;
       if (tpl === 'saturday') return !!(SPECIAL_NOTE && SPECIAL_NOTE[k]);   /* 调休周六 */
@@ -656,6 +662,16 @@ function stateAt(i, m){
   if (m >= last.e && m < close) return { label:'就寝准备', cat:'prep', s:last.e, e:close, li:null };
   return { label:'已关寝', cat:'closed', s:null, e:null, li:'close' };
 }
+/* 找 fromMin 之后（含起点）第一个正课段（跳过 课间/午休/晚休/休息）；没有返回 null。
+   countdown() 与 checkNotify() 共用：休息段里「还有 X 分钟上课」要找的是下一节课，
+   而不是休息段自己的结束时间。 */
+function nextClassSeg(segs, fromMin){
+  for (var k = 0; k < segs.length; k++){
+    var g = segs[k];
+    if (g.s >= fromMin && ['gap','noon','eve','free'].indexOf(g.cat) < 0) return g;
+  }
+  return null;
+}
 /* 距离下课 / 距离上课 的倒计时
    - 正在上课        -> 还有 X 下课
    - 课间/午休/晚休  -> 还有 X 上课（该段结束就是下一节课开始）
@@ -674,11 +690,7 @@ function countdown(i, m, secNow){
        关寝时间取自 TRACKS[i].close（不是段，所以以前拿 closed 段判断永远不触发）。 */
     var _close = toMin(TRACKS[i].close), _toClose = _close - m;
     if (_toClose > 0 && _toClose <= 120) return { kind: 'end', text: '还有 ' + leftText(_toClose) + '关寝' };
-    var _segs = SEGS[i] || [], _nx = null;
-    for (var _k = 0; _k < _segs.length; _k++){
-      var _g = _segs[_k];
-      if (_g.s >= st.e && ['gap','noon','eve','free'].indexOf(_g.cat) < 0){ _nx = _g; break; }
-    }
+    var _nx = nextClassSeg(SEGS[i], st.e);
     if (_nx){ var _d = _nx.s - m; if (_d > 0 && _d <= 120) return { kind: 'next', text: '还有 ' + leftText(_d) + '上课' }; }
     return null;
   }
@@ -897,16 +909,19 @@ function renderCards(){
 }
 
 /* ===================== “现在”实时高亮 ===================== */
+var _nowBarHtml = '';
 function renderNow(){
   var d = new Date();
   var m = d.getHours()*60 + d.getMinutes();
 
   var secNow = d.getHours()*3600 + d.getMinutes()*60 + d.getSeconds();
   var html = '<div class="nowclock"><span id="nowClock">' + fmt(m) + '</span><em>当前状态</em></div><div class="nowlist">';
+  var nowSt = [], nowCd = [];
   TRACKS.forEach(function(t, i){
     var st = stateAt(i, m);
-    var live = (st.cat !== 'off' && st.cat !== 'closed' && st.cat !== 'prep');
     var cd = countdown(i, m, secNow);
+    nowSt.push(st); nowCd.push(cd);
+    var live = (st.cat !== 'off' && st.cat !== 'closed' && st.cat !== 'prep');
     html += '<div class="nowitem' + (live ? ' live' : '') + '" data-track="' + i + '" style="--tc:' + t.accent + '">' +
             '<b>' + t.name + '</b><span>' + stateText(st) + '</span>' +
             (cd ? '<em class="cd ' + cd.kind + '">' + cd.text + '</em>' : '') +
@@ -918,7 +933,7 @@ function renderNow(){
   if (sched !== SCHEDULES.weekday || _spNote){
     /* 特殊日按周内课表上课时（如周日中秋调休）也要显示提示条，否则用户看不到调休说明 */
     var _dn = _spNote
-      ? ('今日是' + ['周日','周一','周二','周三','周四','周五','周六'][d.getDay()] + ' · ' + _spNote)
+      ? (['周日','周一','周二','周三','周四','周五','周六'][d.getDay()] + ' · ' + _spNote)
       : sched.label;
     html += '<div class="daynote">今日：' + _dn + '，请以学校实际安排为准。</div>';
   }
@@ -931,7 +946,10 @@ function renderNow(){
           + ' · ' + _hc.date.slice(5)
           + (_hc.note ? '（' + _hc.note + '）' : '') + '</div>';
   }
-  document.getElementById('nowBar').innerHTML = html;
+  if (html !== _nowBarHtml){
+    _nowBarHtml = html;
+    document.getElementById('nowBar').innerHTML = html;
+  }
 
   if (m >= START && m <= END){
     nowLine.style.display = 'block';
@@ -944,8 +962,7 @@ function renderNow(){
 
   updateVtNow(m);
   TRACKS.forEach(function(t, i){
-    var st = stateAt(i, m);
-    var cd = countdown(i, m, secNow);
+    var st = nowSt[i], cd = nowCd[i];
     if (cardMeta[i]) cardMeta[i].textContent = stateText(st);
     if (cardCd[i]){
       cardCd[i].textContent = cd ? cd.text : '';
@@ -958,8 +975,8 @@ function renderNow(){
     });
     cardItems[i].forEach(function(li){
       var key = li.getAttribute('data-row');
-      var on = (key === 'close') ? (st.li === 'close')
-                                 : (st.li === parseInt(key, 10));
+      var on = (st.cat !== 'free') && ((key === 'close') ? (st.li === 'close')
+                                 : (st.li === parseInt(key, 10)));
       li.classList.toggle('live', on);
       li.querySelector('.lbl').setAttribute('data-suffix',
         on ? (st.cat === 'closed' ? ' · 已关寝' : (st.cat === 'noon' || st.cat === 'eve' ? ' · 当前' : ' · 进行中')) : '');
@@ -1123,7 +1140,7 @@ function updateVtNow(m){
       var li = stateAt(i, m).li;
       vtBlocks[i].forEach(function(b){
         var row = parseInt(b.getAttribute('data-row'), 10);
-        b.classList.toggle('now', !vtPinned && li === row);
+        b.classList.toggle('now', !vtPinned && li === row && !b.classList.contains('free'));
       });
     });
   }
@@ -1412,13 +1429,13 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.4.5';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.4.6';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 页面热更新（version.txt）的发行版 tag：主要用来取 index.html 附件，跟页面版本号走。
    程序本体（exe/apk）的下载 tag 在 program.txt 里单独记（= 程序本体版本），两者分开算；
    只有 program.txt 拿不到时才拿 RELEASE_TAG 兜底。 */
-var RELEASE_TAG = 'v2.4.5';
+var RELEASE_TAG = 'v2.4.6';
 var latestInfo = null;
 /* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
 var SHELL_SEEN_KEY = 'sqzy-seen-shell';
@@ -1427,12 +1444,23 @@ var shellVer = null;        /* 当前壳自报的版本；拿不到就是 null�
 var programInfo = null;     /* 仓库里 program.txt 的内容 */
 var notifyCfg = { on:true, before:true, next:true, start:false, end:false, min:5,
                   tracks:[true,true,true,true] };
+/* 配置从 localStorage / 壳文件里读回来时类型可能不对（字符串 min 会让 === 恒 false、静默漏提醒），
+   落值后统一归正：min 钳到 1..30，开关全部布尔化。 */
+function normCfg(){
+  notifyCfg.min = Math.min(30, Math.max(1, parseInt(notifyCfg.min, 10) || 5));
+  notifyCfg.on = !!notifyCfg.on;
+  notifyCfg.before = !!notifyCfg.before;
+  notifyCfg.next = !!notifyCfg.next;
+  notifyCfg.start = !!notifyCfg.start;
+  notifyCfg.end = !!notifyCfg.end;
+}
 var firedKeys = {};
 var pywvReady = false;
 
 function loadCfg(){
   try{ var raw = safeGet(NOTIFY_KEY); if (raw) { var o = JSON.parse(raw);
     for (var k in notifyCfg) if (o[k] !== undefined) notifyCfg[k] = o[k];
+    normCfg();
     if (!(notifyCfg.tracks instanceof Array) || notifyCfg.tracks.length !== 4) notifyCfg.tracks = [true,true,true,true];
   } }catch(e){}
   try{ var f = safeGet(FIRED_KEY); if (f) firedKeys = JSON.parse(f) || {}; }catch(e){}
@@ -1460,6 +1488,7 @@ function adoptCfgFromShell(){
       var st = o && o.settings;
       if (!st || !st.cfg || (st.t || 0) <= cfgStamp()) return;
       for (var k in notifyCfg) if (st.cfg[k] !== undefined) notifyCfg[k] = st.cfg[k];
+      normCfg();
       if (!(notifyCfg.tracks instanceof Array) || notifyCfg.tracks.length !== 4){
         notifyCfg.tracks = [true,true,true,true];
       }
@@ -2046,7 +2075,9 @@ function showShellDialog(cur, want, url, info, autoStarted, forced){
   card.appendChild(go); card.appendChild(later);
   wrap.appendChild(card);
   document.body.appendChild(wrap);
+  var failed = false;
   go.addEventListener('click', function(){
+    if (failed){ openExternal(url); closeDialog('shDlg'); return; }
     if (!canAuto){
       if (isAndroid()){
         var okDl = downloadApkSmart(info || programInfo);
@@ -2077,10 +2108,10 @@ function showShellDialog(cur, want, url, info, autoStarted, forced){
           inPageToast('已下载并校验通过', a.msg + '；重启后就是 ' + want + '，设置和课表都不会丢');
         });
     }).catch(function(err){
+      failed = true;
       go.disabled = false; go.textContent = '手动下载新版';
       later.textContent = '稍后再说';
       later.style.display = '';
-      go.onclick = function(){ openExternal(url); closeDialog('shDlg'); };
       inPageToast('一键更新没成功', String((err && err.message) || err) + '；已改成手动下载');
     });
   });
@@ -2205,9 +2236,12 @@ function checkNotify(){
         if (notifyCfg.before && isClassSeg(cur) && cur.e - mm === notifyCfg.min)
           fireNotify(i, mm, 'before', t.name + ' · 还有 ' + notifyCfg.min + ' 分钟下课',
                      cur.label + ' ' + fmt(cur.s) + '–' + fmt(cur.e));
-        if (notifyCfg.next && cur && !isClassSeg(cur) && cur.e - mm === notifyCfg.min)
-          fireNotify(i, mm, 'next', t.name + ' · 还有 ' + notifyCfg.min + ' 分钟上课',
-                     '下一节 ' + fmt(cur.e) + ' 开始');
+        if (notifyCfg.next && cur && !isClassSeg(cur)){
+          var nx = nextClassSeg(SEGS[i], cur.e);
+          if (nx && nx.s - mm === notifyCfg.min)
+            fireNotify(i, mm, 'next', t.name + ' · 还有 ' + notifyCfg.min + ' 分钟上课',
+                       '下一节 ' + fmt(nx.s) + ' 开始');
+        }
       });
     })(m - k);
   }
@@ -2712,6 +2746,9 @@ window.SQTC = { showGuide:showGuide, hideGuide:hideGuide, pinAt:pinAt, unpin:unp
           try { inPageToast('今天按：' + txt, sel.value === 'auto' ? '回到按日期规则自动判断' : '只影响本机，立即生效'); } catch(e){}
         });
       }
+      /* 桌面版：校历由「校历优先问本地壳」那块走 /file 加载，这里不再发 GitHub 镜像请求，
+         避免镜像失败回包 applyCalendar(null) 把壳已加载的 SPECIAL 清掉 */
+      if (typeof apiBase === 'function' && apiBase()) return;
       if (typeof readRemoteText === 'function'){
         readRemoteText('calendar.txt', function(text){
           var meta = applyCalendar(text);
@@ -2732,25 +2769,19 @@ window.SQTC = { showGuide:showGuide, hideGuide:hideGuide, pinAt:pinAt, unpin:unp
    为什么放这里：临时停课/调休时用户第一眼就能看到并一键切换，不用翻设置面板。 */
 function setToday(v, showToast){
   try { safeSet('sqzy-today', v || 'auto'); } catch(e){}
-  try { applySchedule(); } catch(e){}
   var a = document.getElementById('setToday'), b = document.getElementById('setTodayTop');
   if (a) a.value = v || 'auto';
   if (b) b.value = v || 'auto';
+  /* 当天作息有"按日期 + 当日缓存"，光改覆盖值不会让缓存失效 —— 清掉缓存后本页就地重绘，
+     不用再等 500ms 整页重载 */
+  _curDay = '';
+  try {
+    if (applySchedule()){ renderGantt(); renderCards(); renderVertical(); renderNow(); }
+  } catch(e){}
   if (showToast){
     var names = { auto:'自动（按日期规则）', weekday:'周内作息', saturday:'周六（半天课）', sunday:'周日', holiday:'放假（全天休息）', event:'活动（全天不上课）' };
     try { inPageToast('今天按：' + (names[v] || v), (v === 'auto') ? '回到按日期规则自动判断' : '只影响本机，立即生效'); } catch(e){}
   }
-
-  /* 关键：当天作息是"按日期解析 + 当日缓存"的，光改覆盖值不会让缓存失效 ——
-     所以这里强制整页重载一次，让 resolveSchedule 按新的覆盖值重新解析。
-     （重载后页头下拉会保持刚才选的项，设置面板里的也同步。） */
-  setTimeout(function(){
-    try{
-      /* 安卓 WebView：用原生 reload，别用 location.reload()（会被当成外链丢给系统浏览器） */
-      if (window.SQZY_ANDROID && window.SQZY_ANDROID.reloadPage){ window.SQZY_ANDROID.reloadPage(); return; }
-    }catch(e){}
-    try { location.reload(); } catch(e){}
-  }, 500);
 }
 (function(){
   function boot(){
@@ -2777,38 +2808,11 @@ function setToday(v, showToast){
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else setTimeout(boot, 0);
 })();
 
-/* ===== 休息段合并显示（用户要求：休息只保留一条，不要整屏都是休息）=====
-   做法：渲染完成后扫一遍列表，同一个列表里连续出现的"休息"行只留第一条，其余隐藏。
-   为什么不去改解析：时段索引被甘特图/倒计时/通知多处引用，动数据风险大；这里只影响显示。 */
-(function(){
-  function isRestRow(el){
-    if (!el || el.children.length > 3) return false;
-    var t = (el.textContent || '').replace(/\s+/g, '');
-    if (!t || t.length > 40) return false;
-    if (/第[一二三四五六七八九十]节/.test(t)) return false;
-    return t.indexOf('休息') === 0;
-  }
-  function mergeRests(){
-    try{
-      var all = document.querySelectorAll('li,div,tr,p,section,article');
-      var lastBox = null;
-      for (var i = 0; i < all.length; i++){
-        var el = all[i];
-        if (!isRestRow(el)) continue;
-        if (el.parentNode === lastBox){ el.style.display = 'none'; }
-        else { el.style.display = ''; lastBox = el.parentNode; }
-      }
-    }catch(e){}
-  }
-  window.SQZY_MERGE_RESTS = mergeRests;
-  function boot(){ mergeRests(); setInterval(mergeRests, 1000); }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else setTimeout(boot, 0);
-})();
-
 /* ===== 手动覆盖时，提示条写清楚（用户要求）=====
-   自动：保持原来的「今日：周日 · 白天休息（晚自习照常），请以学校实际安排为准。」
-   手动：改成「今日是周日，你选择了周日时间 · 白天休息（晚自习照常），请以学校实际安排为准。」
-   做法：只改那一条提示元素的文字，复用作者原本的描述文案（从现有文本里取 · 之后那一段）。 */
+   自动：renderNow 已直接拼「今日：周四 · 校历说明」；
+   手动：改成「今日是周日，你选择了周日时间 · 校历说明」。
+   说明文字直接取数据源 SPECIAL_NOTE，不再从渲染文本里抠。
+   运行时机：由「收尾修正」里的 MutationObserver 触发，不再挂 1 秒轮询。 */
 (function(){
   var NAMES = { weekday: '周内', saturday: '周六', sunday: '周日', holiday: '放假', event: '活动' };
   var WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -2827,28 +2831,27 @@ function setToday(v, showToast){
   function fixHint(){
     try{
       var ov = safeGet('sqzy-today') || 'auto';
-      var hit = pick();
-      if (!hit) return;
       if (ov === 'auto'){
+        var hit = pick();
+        if (!hit) return;
         if (hit.el.getAttribute('data-sqzy-manual') === '1'){
           hit.el.textContent = hit.el.getAttribute('data-sqzy-auto-text') || hit.text;
           hit.el.removeAttribute('data-sqzy-manual');
         }
         return;
       }
-      if (hit.el.getAttribute('data-sqzy-manual') === '1') return;   /* 已经改过，别反复叠加 */
-      hit.el.setAttribute('data-sqzy-manual', '1');
-      hit.el.setAttribute('data-sqzy-auto-text', hit.text);
-      var m = hit.text.match(/·\s*([^，,]+)/);
-      var desc = m ? m[1].trim() : '';
+      var hit2 = pick();
+      if (!hit2) return;
+      if (hit2.el.getAttribute('data-sqzy-manual') === '1') return;   /* 已经改过，别反复叠加 */
+      hit2.el.setAttribute('data-sqzy-manual', '1');
+      hit2.el.setAttribute('data-sqzy-auto-text', hit2.text);
+      var note = (typeof SPECIAL_NOTE === 'object' && SPECIAL_NOTE) ? (SPECIAL_NOTE[calKey(new Date())] || '') : '';
       var wd = WD[new Date().getDay()];
-      hit.el.textContent = '今日是' + wd + '，你选择了' + (NAMES[ov] || ov) + '时间'
-                         + (desc ? ' · ' + desc : '') + '，请以学校实际安排为准。';
+      hit2.el.textContent = '今日是' + wd + '，你选择了' + (NAMES[ov] || ov) + '时间'
+                          + (note ? ' · ' + note : '') + '，请以学校实际安排为准。';
     }catch(e){}
   }
   window.SQZY_FIX_HINT = fixHint;
-  function boot(){ fixHint(); setInterval(fixHint, 1000); }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else setTimeout(boot, 0);
 })();
 
 /* ===== 「今天按」控件外观修正（用户反馈：换行显示 + 选项白字看不清 + 不够好看）=====
@@ -3011,145 +3014,15 @@ function setToday(v, showToast){
 })();
 
 /* ===== 提示条显示校历原因（改良版）=====
-   需求：像 9/24 这天，提示条要写"今日是周四 · 中秋调休：上午照常上课，下午放假（19:00 关寝）"，
-   而不是只报模板名"周六 · 半天课"（模板名是内部实现，用户看不出为什么今天要上半天的课）。
-   优先级：手动覆盖（页头/设置里选的） > 校历说明 > 作者原本的模板文案。 */
-(function(){
-  var WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-  function todayKey(){
-    var d = new Date(), M = d.getMonth() + 1, D = d.getDate();
-    return d.getFullYear() + '-' + (M < 10 ? '0' + M : M) + '-' + (D < 10 ? '0' + D : D);
-  }
-  function find(){
-    var all = document.querySelectorAll('div,p,span,section');
-    for (var i = 0; i < all.length; i++){
-      var el = all[i];
-      if (el.children.length > 1) continue;
-      var t = (el.textContent || '').trim();
-      if (t.indexOf('请以学校实际安排为准') < 0 || t.length > 120) continue;
-      return { el: el, text: t };
-    }
-    return null;
-  }
-  function fix(){
-    try{
-      var ov = safeGet('sqzy-today') || 'auto';
-      if (ov !== 'auto') return;                                  /* 手动覆盖交给另一段逻辑 */
-      var note = (typeof SPECIAL_NOTE === 'object' && SPECIAL_NOTE) ? SPECIAL_NOTE[todayKey()] : '';
-      if (!note) return;                                            /* 今天不是特殊日，保持原样 */
-      var hit = find();
-      if (!hit) return;
-      var want = '今日是' + WD[new Date().getDay()] + ' · ' + note + '，请以学校实际安排为准。';
-      if (hit.el.textContent !== want) hit.el.textContent = want;
-    }catch(e){}
-  }
-  function boot(){ fix(); try{ new MutationObserver(function(){ clearTimeout(boot._t); boot._t = setTimeout(fix, 120); }).observe(document.body, { childList: true, subtree: true, characterData: true }); }catch(e){} }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
-})();
+   renderNow 已直接用「今日：周四 · 校历说明」拼装，这里不再需要 DOM 改写补丁。 */
 
-/* ===== 休息段不显示"红框/进行中"（用户要求）=====
-   做法：渲染后用 DOM 兜底 —— 行文字以 休息/午休/晚休 开头的，去掉「· 进行中」后缀并清掉高亮样式。
-   只为显示服务，不碰渲染逻辑本身。 */
-(function(){
-  function strip(){
-    try{
-      var all = document.querySelectorAll('li,div,p,span,section,article');
-      for (var i = 0; i < all.length; i++){
-        var el = all[i];
-        if (el.children.length > 1) continue;
-        var t = (el.textContent || '').trim();
-        if (!/^(休息|午休|晚休|课间休息)/.test(t)) continue;
-        if (t.indexOf('进行中') >= 0){
-          el.textContent = t.replace(/\s*·?\s*进行中\s*$/, '');
-        }
-        if (el.style && el.style.background) el.style.background = '';
-        if (el.style && el.style.backgroundColor) el.style.backgroundColor = '';
-        if (el.style && el.style.color) el.style.color = '';
-        if (el.style && el.style.borderColor) el.style.borderColor = '';
-      }
-    }catch(e){}
-  }
-  function boot(){ strip(); try{ new MutationObserver(function(){ clearTimeout(boot._t); boot._t = setTimeout(strip, 150); }).observe(document.body, { childList: true, subtree: true, characterData: true }); }catch(e){} }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
-})();
+/* ===== 休息段不高亮/不标"进行中" =====
+   已在渲染层修正（renderNow 卡片循环跳过 free、甘特/竖版跳过 .free），DOM 兜底补丁不再需要。 */
 
 
 /* ===== 休息段合并 v3（时间也合并）=====
-   在 v2 的几何合并基础上，把**保留下来的那一条**改成整段的时间与标签，例如周六
-   原来的「午休 11:30–14:00」+ 一串「休息」→ 现在只显示一条「休息 11:30–19:00」。
-   只改文本节点（圆点、结构不动），所以不会破坏卡片的图标与配色。 */
-(function(){
-  function isRest(t){ return /^(休息|午休|晚休|课间休息)/.test(t) && t.length <= 60; }
-  function timeOf(t){ var m = /(\d{1,2}:\d{2})\s*[-–—~]\s*(\d{1,2}:\d{2})/.exec(t); return m ? { a: m[1], b: m[2], raw: m[0] } : null; }
-  function editTexts(el, fn){
-    var nodes = [];
-    (function walk(n){
-      for (var i = 0; i < n.childNodes.length; i++){
-        var c = n.childNodes[i];
-        if (c.nodeType === 3) nodes.push(c);
-        else if (c.nodeType === 1) walk(c);
-      }
-    })(el);
-    for (var k = 0; k < nodes.length; k++){
-      var nv = fn(nodes[k].nodeValue || '');
-      if (nv !== nodes[k].nodeValue) nodes[k].nodeValue = nv;
-    }
-  }
-  function pass(){
-    try{
-      var all = document.querySelectorAll('li,div,p,span,section,article');
-      var cand = [];
-      for (var i = 0; i < all.length; i++){
-        var el = all[i];
-        if (el.children.length > 2) continue;
-        if (el.style.display === 'none') continue;
-        /* 卡片列表、竖版时间轴、横版甘特图都已在渲染时合并休息段，这里再碰会误隐藏标签/晚修 */
-        if (el.closest && (el.closest('.card .vtl') || el.closest('#vtPlot') || el.closest('#gGrid'))) continue;
-        var t = (el.textContent || '').replace(/\s+/g, ' ').trim();
-        if (!isRest(t)) continue;
-        var r = el.getBoundingClientRect();
-        if (r.width < 20 || r.height < 6) continue;
-        if (t.indexOf('进行中') >= 0) editTexts(el, function(s){ return s.replace(/\s*·?\s*进行中\s*$/, ''); });
-        if (el.style){ el.style.background = ''; el.style.backgroundColor = ''; el.style.color = ''; el.style.borderColor = ''; }
-        cand.push({ el: el, t: t, r: r, time: timeOf(t) });
-      }
-      cand.sort(function(a, b){ return a.r.top - b.r.top; });
-      var head = null, last = null, endT = null, tail = null;
-      function flush(){
-        if (head && endT && head.time && endT !== head.time.b){
-          var span = head.time.a + '–' + endT;
-          var raw = head.time.raw, a = head.time.a;
-          editTexts(head.el, function(s){
-            var o = s;
-            if (o.indexOf(raw) >= 0) o = o.replace(raw, span);
-            else if (o.indexOf(a) >= 0 && !/^\s*\d/.test(o)) o = o;
-            o = o.replace(/^(午休|晚休|课间休息)/, '休息');
-            return o;
-          });
-          head.t = '';
-        }
-      }
-      for (var j = 0; j < cand.length; j++){
-        var c = cand[j];
-        var same = last && (c.r.top - last.bottom) < 40 && Math.abs(c.r.left - last.left) < 10;
-        if (same){
-          if (c.time) endT = c.time.b;
-          c.el.style.display = 'none';
-          tail = c.r;
-        } else {
-          flush();
-          head = c; endT = c.time ? c.time.b : null; c.el.style.display = '';
-          tail = c.r;
-          if (c.el.style.display === 'none') c.el.style.display = '';
-        }
-        last = c.r;
-      }
-      flush();
-    }catch(e){}
-  }
-  function boot(){ pass(); try{ new MutationObserver(function(){ clearTimeout(boot._t); boot._t = setTimeout(pass, 150); }).observe(document.body, { childList: true, subtree: true, characterData: true }); }catch(e){} }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
-})();
+   甘特 / 卡片 / 竖版三处渲染时已各自合并休息段并写对整段时间，DOM 兜底补丁不再需要。 */
+
 </script>
 </body>
 </html>

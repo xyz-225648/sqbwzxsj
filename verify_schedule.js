@@ -9,6 +9,9 @@ const html = fs.readFileSync(PAGE, 'utf8');
 // 提取数据区：从 START 定义到 stateText（含 resolveSchedule / buildSegments / stateAt / countdown）
 const startIdx = html.indexOf('var START = 7*60+30');
 const endIdx = html.indexOf('function stateText(');
+if (startIdx < 0 || endIdx < 0 || endIdx <= startIdx) {
+  throw new Error('页面锚点没找到，数据区提取失败：start=' + startIdx + ', end=' + endIdx);
+}
 let code = html.slice(startIdx, endIdx);
 
 // 沙箱执行
@@ -89,6 +92,34 @@ assert('周六休息段无倒计时', cdSat === null);
 useTemplate(SU);
 const cdSun = countdown(0, 18*60+40, (18*60+40)*60); // 周日 18:40 晚一
 assert('周日晚上课中倒计时存在', cdSun !== null && cdSun.kind === 'end');
+
+// ---- 6. parseCalendar 单日行必须校验日期 ----
+const PC = sandbox.parseCalendar;
+const badDay = PC('2026-13-01 holiday 元旦');
+assert('parseCalendar 坏日期单日行 → bad=1（不再静默入表）', badDay.bad === 1 && badDay.table['2026-13-01'] === undefined,
+       'bad=' + badDay.bad + ' table=' + JSON.stringify(badDay.table));
+const goodDay = PC('2026-10-01 holiday 国庆');
+assert('parseCalendar 正常单日行 → bad=0 且入表', goodDay.bad === 0 && goodDay.table['2026-10-01'] === 'holiday',
+       'bad=' + goodDay.bad);
+
+// ---- 7. holidayCountdown 跳过坏日期键 ----
+sandbox.SPECIAL = { '2026-13-01': 'holiday', '2026-12-25': 'holiday' };
+const hcSkip = sandbox.holidayCountdown(new Date('2026-01-01T12:00:00'));
+assert('holidayCountdown 跳过坏日期键并找到最近合法假期',
+       !!(hcSkip && hcSkip.date === '2026-12-25'), 'hc=' + JSON.stringify(hcSkip));
+sandbox.SPECIAL = JSON.parse(before);
+
+// ---- 8. nextClassSeg：休息段之后找下一节课程（checkNotify 与 countdown 共用） ----
+const nextClassSeg = sandbox.nextClassSeg;
+useTemplate(SU);
+const nxSun = nextClassSeg(sandbox.SEGS[0], sandbox.toMin('7:30'));
+const wantSunS = sandbox.toMin(sandbox.TRACKS[0].times[10].split('-')[0]);
+assert('nextClassSeg 周日白天跳过休息/晚休 → 晚一（cat=night）',
+       !!(nxSun && nxSun.cat === 'night' && nxSun.s === wantSunS),
+       'g=' + JSON.stringify(nxSun) + ' wantS=' + wantSunS);
+useTemplate(ST);
+assert('nextClassSeg 周六下午无课 → null',
+       nextClassSeg(sandbox.SEGS[0], sandbox.toMin('11:30')) === null);
 
 console.log('\n结果: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
