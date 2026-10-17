@@ -543,7 +543,7 @@ function parseCalendar(text){
       table[key] = tpl; if (_note) notes[key] = _note; return;
     }
     var a = key.split('~'), d1 = new Date(a[0] + 'T00:00:00'), d2 = new Date(a[1] + 'T00:00:00');
-    if (isNaN(d1) || isNaN(d2) || d2 < d1){ bad++; return; }
+    if (isNaN(d1) || isNaN(d2) || calKey(d1) !== a[0] || calKey(d2) !== a[1] || d2 < d1){ bad++; return; }
     for (var d = new Date(d1), g = 0; d <= d2 && g < 400; d.setDate(d.getDate() + 1), g++) {
       table[calKey(d)] = tpl;
       if (_note) notes[calKey(d)] = _note;
@@ -915,7 +915,7 @@ function renderNow(){
   var m = d.getHours()*60 + d.getMinutes();
 
   var secNow = d.getHours()*3600 + d.getMinutes()*60 + d.getSeconds();
-  var html = '<div class="nowclock"><span id="nowClock">' + fmt(m) + '</span><em>当前状态</em></div><div class="nowlist">';
+  var html = '<div class="nowclock"><span id="nowClock"></span><em>当前状态</em></div><div class="nowlist">';
   var nowSt = [], nowCd = [];
   TRACKS.forEach(function(t, i){
     var st = stateAt(i, m);
@@ -950,6 +950,9 @@ function renderNow(){
     _nowBarHtml = html;
     document.getElementById('nowBar').innerHTML = html;
   }
+  /* 时钟不参与缓存比较：单独更新，分钟没变时不再整条重建 */
+  var _nc = document.getElementById('nowClock');
+  if (_nc) _nc.textContent = fmt(m);
 
   if (m >= START && m <= END){
     nowLine.style.display = 'block';
@@ -2747,8 +2750,9 @@ window.SQTC = { showGuide:showGuide, hideGuide:hideGuide, pinAt:pinAt, unpin:unp
         });
       }
       /* 桌面版：校历由「校历优先问本地壳」那块走 /file 加载，这里不再发 GitHub 镜像请求，
-         避免镜像失败回包 applyCalendar(null) 把壳已加载的 SPECIAL 清掉 */
-      if (typeof apiBase === 'function' && apiBase()) return;
+         避免镜像失败回包 applyCalendar(null) 把壳已加载的 SPECIAL 清掉；
+         安卓版例外：readRemoteText 里有原生桥 fetchUrl 通道，仍要走这里 */
+      if (!window.SQZY_ANDROID && typeof apiBase === 'function' && apiBase()) return;
       if (typeof readRemoteText === 'function'){
         readRemoteText('calendar.txt', function(text){
           var meta = applyCalendar(text);
@@ -2772,6 +2776,9 @@ function setToday(v, showToast){
   var a = document.getElementById('setToday'), b = document.getElementById('setTodayTop');
   if (a) a.value = v || 'auto';
   if (b) b.value = v || 'auto';
+  /* 就地重绘会重建甘特图/竖版里的钉住线，先复位钉住状态 */
+  if (vtPinned) vtUnpin();
+  if (pinned) unpin();
   /* 当天作息有"按日期 + 当日缓存"，光改覆盖值不会让缓存失效 —— 清掉缓存后本页就地重绘，
      不用再等 500ms 整页重载 */
   _curDay = '';
@@ -2797,7 +2804,7 @@ function setToday(v, showToast){
       sel.id = 'setTodayTop';
       sel.className = 'setbtn';
       sel.style.cssText = 'padding:3px 8px;font-size:12px;cursor:pointer';
-      [['auto','自动（按日期规则）'],['weekday','周内作息'],['saturday','周六（半天课）'],['sunday','周日'],['holiday','放假（全天休息）']]
+      [['auto','自动（按日期规则）'],['weekday','周内作息'],['saturday','周六（半天课）'],['sunday','周日'],['holiday','放假（全天休息）'],['event','活动（全天不上课）']]
         .forEach(function(p){ var o = document.createElement('option'); o.value = p[0]; o.textContent = p[1]; sel.appendChild(o); });
       sel.value = (safeGet('sqzy-today') || 'auto');
       sel.addEventListener('change', function(){ setToday(sel.value, true); });
@@ -2886,7 +2893,7 @@ function setToday(v, showToast){
     }catch(e){}
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ style(); void 0; });
-  else { style(); setInterval(style, 1200); }
+  else { style(); }
 })();
 
 /* ===== 收尾修正（用户反馈）=====
@@ -2924,7 +2931,7 @@ function setToday(v, showToast){
     if (typeof window.SQZY_FIX_HINT === 'function') window.SQZY_FIX_HINT();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ tick(); watchHint(); void 0; });
-  else { tick(); watchHint(); setInterval(alignHeader, 1500); }
+  else { tick(); watchHint(); }
 })();
 
 /* ===== 页头布局修正 v2（用户反馈：三个按钮要在一组右对齐；控件不能一直跳）=====
