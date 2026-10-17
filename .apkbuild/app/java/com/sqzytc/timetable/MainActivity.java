@@ -60,9 +60,33 @@ public class MainActivity extends Activity {
     private static final java.util.regex.Pattern VER_IN_LATEST =
             java.util.regex.Pattern.compile("\"v\"\\s*:\\s*\"(v?[0-9.]+)\"");
 
+    /* 桥参数白名单：下载/分享只放行自家仓库的附件与镜像，其他任何地址都是不可信输入。
+       downloadApk 只认 gitee 发行版附件（302 会落到 raw.giteeusercontent.com，一并放行）；
+       shareApk 额外放行页面 apkMirrors() 实际用到的三个 jsDelivr 和 ghproxy 前缀。 */
+    private static final String OWNER_REPO = "xyz-225648/sqbwzxsj";
+    private static final String GITEE_RAW_REL =
+            "https://raw.giteeusercontent.com/" + OWNER_REPO + "/releases/download/";
+
+    private static boolean isTrustedApkUrl(String url) {
+        return url != null && (url.startsWith(RELEASE_DL) || url.startsWith(GITEE_RAW_REL));
+    }
+
+    private static boolean isTrustedShareUrl(String url) {
+        if (isTrustedApkUrl(url)) {
+            return true;
+        }
+        return url != null && (url.startsWith("https://raw.githubusercontent.com/" + OWNER_REPO + "/")
+                || url.startsWith("https://cdn.jsdelivr.net/gh/" + OWNER_REPO + "@")
+                || url.startsWith("https://fastly.jsdelivr.net/gh/" + OWNER_REPO + "@")
+                || url.startsWith("https://gcore.jsdelivr.net/gh/" + OWNER_REPO + "@")
+                || url.startsWith("https://ghproxy.net/https://raw.githubusercontent.com/" + OWNER_REPO + "/"));
+    }
+
     private WebView web;
     private volatile boolean alive = true;
     private volatile boolean sheetOpen = false;
+    /* 当前页面是否为壳自己加载的可信内容：桥里敏感的下载/分享/读网络方法以此为准 */
+    private volatile boolean pageTrusted = true;
     private static final String CHANNEL_ID = "sqzy_timetable";
     /* 原子自增：原来的 timeMillis()%500 会撞号，两条提醒互相顶掉 */
     private static final java.util.concurrent.atomic.AtomicInteger NEXT_ID =
@@ -89,7 +113,7 @@ public class MainActivity extends Activity {
             正好绕开 gitee raw 的 text/plain + nosniff（issue IKHWKA #1） */
         @JavascriptInterface
         public String fetchUrl(String url) {
-            if (url == null || !url.startsWith("https://gitee.com/")) {
+            if (!fromTrustedPage() || url == null || !url.startsWith("https://gitee.com/")) {
                 return null;
             }
             try {
@@ -134,9 +158,17 @@ public class MainActivity extends Activity {
         }
 
         /** 分享安装包（#G）：把本机这份 apk 通过微信 / QQ / 蓝牙发给同学。
-            优先用本机已有文件；本机这份不可读/为空时，现下载一份再分享（urls 用 \n 分隔，依次尝试）。 */
+            优先用本机已有文件；本机这份不可读/为空时，现下载一份再分享（urls 用 \n 分隔，依次尝试）。
+            sha256 可选：给定时，从镜像新下载的内容必须哈希校验通过才会发出去（页面传 program.txt 的 apkSha256）。 */
         @JavascriptInterface
         public String shareApk(final String urls) {
+            return shareApk(urls, null);
+        }
+
+        @JavascriptInterface
+        public String shareApk(final String urls, final String sha256) {
+            if (!fromTrustedPage()) return "fail";
+            final String wantSha = (sha256 == null ? "" : sha256.trim().toLowerCase());
             try {
                 final String name = "sqzy-timetable-" + version() + ".apk";
                 File dir = new File(getCacheDir(), "share");
@@ -161,10 +193,18 @@ public class MainActivity extends Activity {
                     public void run() {
                         for (String u : list) {
                             u = u.trim();
-                            if (!(u.startsWith("http://") || u.startsWith("https://"))) continue;
+                            /* 只放行自家仓库的镜像前缀（S9）：任意 http/https 都能下的口子堵死 */
+                            if (!isTrustedShareUrl(u)) continue;
                             try {
                                 downloadTo(u, out);
-                                if (usable(out)) { sendApk(out, name); return; }
+                                if (usable(out)) {
+                                    if (wantSha.length() == 0 || sha256Of(out).equals(wantSha)) {
+                                        sendApk(out, name);
+                                        return;
+                                    }
+                                    /* 哈希对不上：删掉这份，换下一条镜像重试 */
+                                    try { out.delete(); } catch (Exception ignored) { }
+                                }
                             } catch (Exception ignored) { }
                         }
                         toastOnUi("安装包下载失败，请先用「一键下载安装包」存一份");
@@ -178,6 +218,11 @@ public class MainActivity extends Activity {
 
         private boolean usable(File f) {
             return f != null && f.exists() && f.canRead() && f.length() >= 1024;
+        }
+
+        /** 兜底：只有壳自己加载的可信页面才允许用下载/分享/读网络这些桥方法 */
+        private boolean fromTrustedPage() {
+            return pageTrusted;
         }
 
         /** 下载到目标文件：先写 .part 再改名，避免分享到半截文件 */
@@ -252,11 +297,14 @@ public class MainActivity extends Activity {
         }
 
         public String downloadApk(String url, String ver) {
-            final String tag = (ver == null || ver.isEmpty()) ? version() : ver.replace("v", "");
+            if (!fromTrustedPage()) return "bad-url";
+            /* url 只认自家仓库的发行版附件（S8，302 落地域一并放行） */
+            if (!isTrustedApkUrl(url)) return "bad-url";
+            /* ver 会拼进文件名/通知/File 路径，只允许 v?数字.数字(.数字)*（S10） */
+            if (ver != null && !ver.isEmpty() && !ver.matches("v?\\d+(\\.\\d+)*")) return "bad-url";
+            final String tag = (ver == null || ver.isEmpty()) ? version()
+                    : (ver.charAt(0) == 'v' ? ver.substring(1) : ver);
             try {
-                if (url == null || !url.startsWith("https://gitee.com/")) {
-                    return "bad-url";
-                }
                 DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
                 if (dm == null) {
                     return "no-dm";
@@ -517,20 +565,26 @@ public class MainActivity extends Activity {
                 /* 页面是「HTML 文本 + 基地址」塞进去的，每次热替换都会多一条历史，
                    不清掉的话按返回键会退回到替换前那版界面 */
                 v.clearHistory();
+                /* 只有壳自己加载的内容算「可信页」。正常只有 loadDataWithBaseURL
+                   （基地址 https://gitee.com/）和内置 assets 两种；URL 对不上就视为不可信，
+                   桥里敏感的下载/分享/读网络方法会拒绝执行。 */
+                pageTrusted = (url == null) || url.startsWith("https://gitee.com/")
+                        || url.startsWith("file:///android_asset/");
             }
 
             @Override
             public boolean shouldOverrideUrlLoading(WebView v, String url) {
-                /* 下载链接（gitee / github）交给系统浏览器：WebView 里点开会把页面顶掉 */
-                if (url != null && (url.startsWith("https://gitee.com/")
-                        || url.startsWith("https://github.com/"))) {
+                /* 本 App 是单页应用，WebView 里不存在合法的页面跳转：任何导航都不得留在壳内。
+                   http(s) 交给系统浏览器打开，其余 scheme（javascript:/intent:/file: 等）一律拦掉。
+                   否则一旦 WebView 被带到任意第三方页面，那个页面就拿到了完整 SQZY_ANDROID 桥
+                   （下载/分享/读网络），这正是 S7 要堵的口子。 */
+                if (url != null && (url.startsWith("https://") || url.startsWith("http://"))) {
                     try {
                         startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
                     } catch (Exception ignored) {
                     }
-                    return true;
                 }
-                return false;
+                return true;
             }
         });
 
@@ -717,6 +771,29 @@ public class MainActivity extends Activity {
             bo.write(buf, 0, n);
         }
         return new String(bo.toByteArray(), charset);
+    }
+
+    private static String sha256Of(File f) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            FileInputStream in = new FileInputStream(f);
+            try {
+                byte[] buf = new byte[16384];
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    md.update(buf, 0, n);
+                }
+            } finally {
+                in.close();
+            }
+            StringBuilder sb = new StringBuilder();
+            for (byte b : md.digest()) {
+                sb.append(String.format("%02x", b & 0xff));
+            }
+            return sb.toString();
+        } catch (Exception t) {
+            return "";
+        }
     }
 
     private static String http(String url) throws Exception {
