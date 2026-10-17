@@ -115,7 +115,10 @@ def section_of(path, title):
         if ln.startswith('## '):
             if on:
                 break
-            on = ln[3:].strip() == title
+            # 标题形如「## v2.4.7（2026-10-18）」：提取 ## 后的版本 token 与 title 精确比较；
+            # 不能 startswith，否则 v2.4.7 会误配 v2.4.70 这类标题
+            m = re.match(r'v[0-9.]+', ln[3:].strip())
+            on = bool(m) and m.group(0) == title
             if on:
                 continue
         if on:
