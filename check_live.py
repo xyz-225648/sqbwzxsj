@@ -187,7 +187,9 @@ else:
 for label, ext in (('安卓安装包', 'apk'), ('Windows 程序', 'exe')):
     name = '宿迁职业技术学院作息时间表.' + ext
     sha_key = ext + 'Sha256'          # apkSha256 / exeSha256
-    data = get(REL + prog_tag + '/' + urllib.parse.quote(name))
+    # 先看本地：本地没有且 program.txt 该包 sha 缺省 → 直接跳过核验，零网络开销。
+    # 别先 get() 下载线上附件：单包发布场景那个 URL 注定 404，
+    # get 带 6 次重试 + 每次 6 秒等待，白等最多约 7 分钟。
     try:
         local = open(name, 'rb').read()
     except Exception as _e:
@@ -199,6 +201,7 @@ for label, ext in (('安卓安装包', 'apk'), ('Windows 程序', 'exe')):
             # 与 sha/size 缺省的新语义对齐：program.txt 没给 sha，本地没有就不核验
             print('  · 跳过 %s 核验（本地没有 %s，program.txt 的 %s 缺省）' % (label, name, sha_key))
         continue
+    data = get(REL + prog_tag + '/' + urllib.parse.quote(name))
     say(data == local, '%s 下载可用且与本地一致（tag %s，md5 %s）'
         % (label, prog_tag, hashlib.md5(local).hexdigest()[:10]))
 
