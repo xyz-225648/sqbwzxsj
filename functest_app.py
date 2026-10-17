@@ -336,8 +336,8 @@ def main():
             bad('窗口能开出来', '40 秒没等到标题为「%s」的窗口' % TITLE)
             return 1
         ok('窗口已创建', 'hwnd=%s' % hwnd)
-        # 重新枚举一次，拿到窗口句柄列表（onefile exe 的窗口属于子进程）
-        wins = windows_of_title()
+        # 重新枚举一次，拿到窗口句柄列表（onefile exe 的窗口属于子进程）；同样按 p1 进程树过滤
+        wins = windows_of_title(p1.pid)
         hwnd = wins[0] if wins else hwnd
         check('窗口默认可见', wait_for(lambda: is_visible(hwnd), 10), '窗口一直不可见')
         check('默认不置顶', not is_topmost(hwnd), '一开始就是置顶')
@@ -390,7 +390,7 @@ def main():
         check('再开一次 → 原窗口被唤回前台', back, '窗口还是隐藏的')
         exited = wait_for(lambda: p2.poll() is not None, 12)
         check('第二个进程自己退出（不会多开）', exited, '第二个进程 12 秒还没退出（返回码 %s）' % p2.poll())
-        n_win = len(windows_of_title())
+        n_win = len(windows_of_title(p1.pid))
         check('全机只有一个窗口', n_win == 1, '出现了 %d 个窗口' % n_win)
 
         # ---- 置顶也能被唤回后的窗口保持 ----
@@ -440,14 +440,18 @@ def main():
             call_state(port4, 'close=exit')
             call_state(port4, 'startup=1')
             time.sleep(0.5)
-            ctypes.windll.user32.PostMessageW(windows_of_title()[-1], 0x0010, 0, 0)
+            wins4 = windows_of_title(p4.pid)
+            if wins4:
+                ctypes.windll.user32.PostMessageW(wins4[-1], 0x0010, 0, 0)
+            else:
+                print('    · p4 的窗口没枚举到，跳过 WM_CLOSE（进程仍在等待退出）')
             wait_for(lambda: p4.poll() is not None, 20)
 
         cleanup_helpers()
         p5 = launch(cmd + ['--tray'])
         port5 = wait_for(helper_port, 20)
         refresh_token(port5)
-        hwnd5 = wait_for(lambda: (windows_of_title() or [None])[-1], 20)
+        hwnd5 = wait_for(lambda: (windows_of_title(p5.pid) or [None])[-1], 20)
         if not hwnd5 or not port5:
             bad('--tray 静默启动', '窗口或助手没起来')
         else:
@@ -469,7 +473,8 @@ def main():
             if not p or p.poll() is not None:
                 continue
             try:
-                for h in (windows_of_title() or []):
+                # 只给本进程树的窗口发 WM_CLOSE：别把用户桌面上同标题的真实窗口关掉
+                for h in windows_of_title(p.pid):
                     ctypes.windll.user32.PostMessageW(h, 0x0010, 0, 0)
                 if not wait_for(lambda: p.poll() is not None, 8, 0.4):
                     p.kill()
