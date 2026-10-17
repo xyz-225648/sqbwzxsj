@@ -18,7 +18,7 @@ except Exception:
     pass
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-TEMPLATES = ('weekday', 'saturday', 'sunday', 'holiday')
+TEMPLATES = ('weekday', 'saturday', 'sunday', 'holiday', 'event')
 LINE_RE = re.compile(r'^\s*(\d{4}-\d{2}-\d{2})(?:\s*~\s*(\d{4}-\d{2}-\d{2}))?\s+(\w+)\s+(.+?)\s*$')
 
 
