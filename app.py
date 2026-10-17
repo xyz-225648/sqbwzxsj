@@ -623,6 +623,10 @@ class _ApiHandler(http.server.BaseHTTPRequestHandler):
             sha = q.get('sha256', [''])[0]
             ver = q.get('v', [''])[0]
             if url:
+                # 与 /download 同一道白名单：更新器会按这个 url 下载并覆盖本机程序，
+                # 不接受任意第三方地址。
+                if not url.startswith('https://gitee.com/'):
+                    return self._reply({'ok': False, 'err': '只允许 gitee.com 的下载地址'})
                 _UPDATE['info'] = {'exeUrl': url, 'exeSha256': sha, 'exe': ver}
             ok, msg = apply_update()
             return self._reply({'ok': ok, 'msg': msg})
@@ -727,6 +731,10 @@ def apply_update():
     原位置覆盖 → 启动新程序 → 更新器自我删除。
 
     更新器用独立 exe 而不是 cmd/vbs：带中文路径的参数不会再被脚本层吞掉。"""
+    if not getattr(sys, 'frozen', False):
+        # 源码模式下 sys.executable 是 python.exe：更新器会对其 taskkill /F 并尝试用
+        # exe 覆盖解释器本身，属于灾难性误操作面，必须在这里直接拒绝。
+        return False, '源码模式不支持一键更新'
     if not _UPDATE['path']:
         # 新版流程不需要先下载：更新器自己按 program.txt 的直链 + sha256 下载
         pass
