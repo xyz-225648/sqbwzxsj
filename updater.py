@@ -2,7 +2,8 @@
 """独立更新器：下载新安装包 → 校验 → 结束旧进程 → 原位置替换 → 启动新程序 → 自我删除。
 
 主程序把更新器从自身释放出来后用下面参数启动：
-    sqzy_updater.exe --url <下载直链> --sha256 <sha256> --target <旧exe路径> [--version <版本>]
+    sqzy_updater.exe --url <下载直链> --sha256 <sha256> --target <旧exe路径> [--version <版本>] [--file <已下载并校验过的包>]
+--file 给的包存在且 sha256 对得上就直接复用，跳过重复下载（主程序 /download 已经下过一遍）。
 """
 import argparse
 import hashlib
@@ -89,25 +90,37 @@ def main():
     ap.add_argument('--sha256', required=True)
     ap.add_argument('--target', required=True)
     ap.add_argument('--version', default='')
+    # 主程序 /download 已经下载并校验过的包：给路径就直接复用，跳过重复下载
+    ap.add_argument('--file', default='')
     args = ap.parse_args()
 
     log('updater start target=%s version=%s' % (args.target, args.version))
     time.sleep(1.5)                      # 给主程序退出留时间
 
     tmp = os.path.join(tempfile.gettempdir(), 'sqzy_new.exe')
-    try:
-        download(args.url, tmp)
-    except Exception as exc:
-        log('download failed: %r' % exc)
-        return 1
-    got = sha256_of(tmp).lower()
-    if got != (args.sha256 or '').lower():
-        log('sha256 mismatch: %s != %s' % (got, args.sha256))
+    reuse = False
+    if args.file and os.path.exists(args.file):
+        got = sha256_of(args.file).lower()
+        if got == (args.sha256 or '').lower():
+            tmp = args.file
+            reuse = True
+            log('reuse pre-checked file %s' % args.file)
+        else:
+            log('--file sha256 mismatch: %s != %s, re-download' % (got, args.sha256))
+    if not reuse:
         try:
-            os.remove(tmp)
-        except Exception:
-            pass
-        return 2
+            download(args.url, tmp)
+        except Exception as exc:
+            log('download failed: %r' % exc)
+            return 1
+        got = sha256_of(tmp).lower()
+        if got != (args.sha256 or '').lower():
+            log('sha256 mismatch: %s != %s' % (got, args.sha256))
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
+            return 2
 
     # 校验通过后才结束旧进程：下载失败或 sha256 不符时旧程序必须原样保留，
     # 不能在旧程序已退出、新包又不可用的情况下把用户的应用「弄消失」。
