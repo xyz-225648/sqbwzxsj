@@ -23,6 +23,8 @@ try:
 except Exception:
     pass
 
+from update_common import norm_ver
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 PAGE_NAMES = ('宿迁职业技术学院作息时间表.html', 'index.html')
 
@@ -74,6 +76,9 @@ def main():
     stamp = time.strftime('%Y-%m-%d %H:%M')
     src = io.open(os.path.join(HERE, html), encoding='utf-8').read()
     ver = page_var(src, 'APP_VERSION', 'v0')      # 版本号只从页面里取，绝不会两边对不上
+    if norm_ver(ver) < 0:
+        print('  ✗ 页面 APP_VERSION=%r 不是合法版本号（要 v 开头 + 三段数字，如 v2.4.7）—— 拒绝发布' % ver)
+        sys.exit(1)
 
     # version.txt 写成可被 <script> 加载的 JS：网页侧没有跨域限制，手机版也能检测更新
     io.open(os.path.join(out, 'version.txt'), 'w', encoding='utf-8', newline=chr(10)).write(
