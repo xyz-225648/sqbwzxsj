@@ -86,10 +86,14 @@ def parse_program(text):
             if not isinstance(u, str) or not u.startswith('https://gitee.com/'):
                 return None
         for key in ('exeSha256', 'apkSha256'):
-            if not isinstance(data.get(key), str) or not _SHA_RE.match(data.get(key)):
+            v = data.get(key)
+            # sha/size 允许各自缺省（make_program_txt 本地缺哪个包就只写哪一半）：
+            # 没给（None/缺键）就跳过，给了才校验格式。
+            if v is not None and (not isinstance(v, str) or not _SHA_RE.match(v)):
                 return None
         for key in ('exeSize', 'apkSize'):
-            if not isinstance(data.get(key), (int, float)) or data.get(key) < 100000:
+            v = data.get(key)
+            if v is not None and (not isinstance(v, (int, float)) or v < 100000):
                 return None
         if not isinstance(data.get('t'), str) or not data.get('t'):
             return None
