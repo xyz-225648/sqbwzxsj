@@ -36,10 +36,11 @@ import java.net.URL;
 
 public class MainActivity extends Activity {
     /* 一键更新：记住最近一次下载的 id，完成时自动拉起安装界面 */
-    /* 下载桥方法在 WebView 的 JavaBridge 线程写这两个值、主线程接收器读，
-       跨线程共享必须 volatile，否则新值可能一直不落主线程的缓存 */
+    /* 下载桥方法在 WebView 的 JavaBridge 线程写、主线程接收器读：
+       volatile 保证单值可见，downloadLock 保证 (名字, 下载id) 成对原子快照 */
     private volatile long lastDownloadId = -1L;
     private volatile String lastApkName = null;
+    private final Object downloadLock = new Object();
     private BroadcastReceiver dlDone = null;
 
     // ==================== 自动更新配置 ====================
@@ -88,6 +89,8 @@ public class MainActivity extends Activity {
 
     private WebView web;
     private volatile boolean alive = true;
+    /* 前台状态：下载完成回调用它决定是直接拉安装器还是退回发通知 */
+    private volatile boolean inForeground = true;
     private volatile boolean sheetOpen = false;
     /* 当前页面是否为壳自己加载的可信内容：桥里敏感的下载/分享/读网络方法以此为准 */
     private volatile boolean pageTrusted = true;
@@ -121,27 +124,41 @@ public class MainActivity extends Activity {
                 return null;
             }
             try {
-                HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-                try {
-                    c.setInstanceFollowRedirects(true);
-                    c.setConnectTimeout(8000);
-                    c.setReadTimeout(8000);
-                    c.setRequestProperty("User-Agent", UA);
-                    if (c.getResponseCode() != 200) {
-                        return null;
-                    }
-                    /* 302 落地后复核最终主机：只允许 gitee.com 与它的 raw 镜像，
-                       防止被重定向带到任意第三方地址 */
-                    java.net.URL finalUrl = c.getURL();
-                    String host = (finalUrl == null) ? null : finalUrl.getHost();
+                /* 手动跟随重定向：最多 5 跳，每一跳都先校验主机是否落在
+                   {gitee.com, raw.giteeusercontent.com} 白名单里 */
+                String current = url;
+                for (int hop = 0; hop < 5; hop++) {
+                    java.net.URL u = new java.net.URL(current);
+                    String host = u.getHost();
                     if (host == null || (!host.equals("gitee.com")
                             && !host.equals("raw.giteeusercontent.com"))) {
                         return null;
                     }
-                    return readAllCapped(c.getInputStream(), "UTF-8", MAX_FETCH_BYTES);
-                } finally {
-                    c.disconnect();
+                    HttpURLConnection c = (HttpURLConnection) u.openConnection();
+                    try {
+                        c.setInstanceFollowRedirects(false);
+                        c.setConnectTimeout(8000);
+                        c.setReadTimeout(8000);
+                        c.setRequestProperty("User-Agent", UA);
+                        int code = c.getResponseCode();
+                        if (code == 200) {
+                            return readAllCapped(c.getInputStream(), "UTF-8", MAX_FETCH_BYTES);
+                        }
+                        if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+                            String loc = c.getHeaderField("Location");
+                            if (loc == null) {
+                                return null;
+                            }
+                            /* 相对地址按当前 URL 解析 */
+                            current = new java.net.URL(u, loc).toString();
+                            continue;
+                        }
+                        return null;
+                    } finally {
+                        c.disconnect();
+                    }
                 }
+                return null;
             } catch (Exception t) {
                 return null;
             }
@@ -182,18 +199,19 @@ public class MainActivity extends Activity {
             if (!fromTrustedPage()) return "fail";
             final String wantSha = (sha256 == null ? "" : sha256.trim().toLowerCase());
             try {
-                final String name = "sqzy-timetable-" + version() + ".apk";
+                final String base = "sqzy-timetable-" + version();
+                final String name = base + ".apk";
                 File dir = new File(getCacheDir(), "share");
                 if (!dir.exists() && !dir.mkdirs()) return "fail";
                 /* 并发重入时两路分享会写同一个 out/out.part：文件名挂 nanoTime 后缀，
-                   每次调用各写各的，互不干扰 */
-                final File out = new File(dir, name + "." + System.nanoTime() + ".apk");
+                   每次调用各写各的，互不干扰（后缀只留一个 .apk） */
+                final File out = new File(dir, base + "-" + System.nanoTime() + ".apk");
 
-                /* 1) 下载目录里那份（可能早先是 0 字节占位文件）—— 只有 usable 才用；
-                   签名不在这里验：自家包 + 目标机系统安装器会再验一次，保持简单 */
+                /* 1) 下载目录里那份（可能早先是 0 字节占位文件）—— usable 且与当前包
+                   同签名才用：公共目录谁都能写，同名的假包直接跳过走后续下载路径 */
                 File dl = new File(Environment.getExternalStoragePublicDirectory(
                         Environment.DIRECTORY_DOWNLOADS), name);
-                if (usable(dl)) {
+                if (usable(dl) && sameSignature(dl)) {
                     try { copyFile(dl, out); } catch (Exception ignored) { }
                 }
                 /* 2) 正在运行的这份 apk */
@@ -233,9 +251,34 @@ public class MainActivity extends Activity {
             }
         }
 
-        /* apk 至少 100KB：半截下载 / 被截断的包不能过这道门槛（签名校验留给系统安装器） */
+        /* apk 至少 100KB：半截下载 / 被截断的包不能过这道门槛 */
         private boolean usable(File f) {
             return f != null && f.exists() && f.canRead() && f.length() >= 100 * 1024;
+        }
+
+        /* 公共 Download 目录任何应用都能写：同名文件必须与当前安装包同签名才可用，
+           否则可能是别人放的假包 —— 直接跳过它，走后续下载路径 */
+        private boolean sameSignature(File apk) {
+            try {
+                PackageManager pm = getPackageManager();
+                android.content.pm.PackageInfo self = pm.getPackageInfo(getPackageName(),
+                        PackageManager.GET_SIGNING_CERTIFICATES | PackageManager.GET_SIGNATURES);
+                if (self == null) return false;
+                if (Build.VERSION.SDK_INT >= 28) {
+                    android.content.pm.PackageInfo apkInfo = pm.getPackageArchiveInfo(
+                            apk.getAbsolutePath(), PackageManager.GET_SIGNING_CERTIFICATES);
+                    if (apkInfo == null || apkInfo.signingInfo == null
+                            || self.signingInfo == null) return false;
+                    return java.util.Arrays.equals(apkInfo.signingInfo.getApkContentsSigners(),
+                            self.signingInfo.getApkContentsSigners());
+                }
+                android.content.pm.PackageInfo apkInfo = pm.getPackageArchiveInfo(
+                        apk.getAbsolutePath(), PackageManager.GET_SIGNATURES);
+                if (apkInfo == null) return false;
+                return java.util.Arrays.equals(apkInfo.signatures, self.signatures);
+            } catch (Exception t) {
+                return false;
+            }
         }
 
         /** 兜底：只有壳自己加载的可信页面才允许用下载/分享/读网络这些桥方法 */
@@ -303,16 +346,23 @@ public class MainActivity extends Activity {
             });
         }
 
+        /* 原子写：先写 .part 再改名（与 downloadTo 同款），中途失败不留半截目标文件 */
         private void copyFile(File src, File dst) throws Exception {
+            File part = new File(dst.getParentFile(), dst.getName() + ".part");
             java.io.InputStream in = new java.io.FileInputStream(src);
-            java.io.OutputStream os = new java.io.FileOutputStream(dst);
+            java.io.OutputStream os = new java.io.FileOutputStream(part);
             try {
                 byte[] buf = new byte[8192];
                 int n;
                 while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
+                os.flush();
             } finally {
                 try { in.close(); } catch (Exception ignored) { }
                 try { os.close(); } catch (Exception ignored) { }
+            }
+            if (!part.renameTo(dst)) {
+                try { part.delete(); } catch (Exception ignored) { }
+                throw new Exception("copy failed");
             }
         }
 
@@ -337,14 +387,17 @@ public class MainActivity extends Activity {
                 }
                 String name = "sqzy-timetable-" + tag + ".apk";
                 DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
-                lastApkName = name;
                 req.setTitle("宿迁职业技术学院作息时间表 " + tag)
                    .setDescription("下载完成后点这条通知即可安装")
                    .setMimeType("application/vnd.android.package-archive")
                    .setNotificationVisibility(
                            DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name);
-                lastDownloadId = dm.enqueue(req);
+                /* (名字, 下载id) 成对写入必须在同一把锁里，否则完成回调可能拿到错位组合 */
+                synchronized (downloadLock) {
+                    lastApkName = name;
+                    lastDownloadId = dm.enqueue(req);
+                }
                 registerDownloadReceiver();
                 return "ok";
             } catch (Exception t) {
@@ -418,7 +471,12 @@ public class MainActivity extends Activity {
                             try {
                                 if (!DownloadManager.ACTION_DOWNLOAD_COMPLETE.equals(i.getAction())) return;
                                 long id = i.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L);
-                                if (id != lastDownloadId) return;
+                                /* 锁内快照 (名字, 下载id)：回调拿到的一定是同一笔下载的成对值 */
+                                final String apkName;
+                                synchronized (downloadLock) {
+                                    if (id != lastDownloadId) return;
+                                    apkName = lastApkName;
+                                }
                                 DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
                                 DownloadManager.Query q = new DownloadManager.Query().setFilterById(id);
                                 android.database.Cursor cur = dm.query(q);
@@ -431,14 +489,18 @@ public class MainActivity extends Activity {
                                     cur.close();
                                 }
                                 /* 复制几十 MB 的包不能挡主线程：后台线程备好安装 Intent，
-                                   主线程只负责拉起安装器（被系统拦下则退回通知） */
+                                   主线程只负责拉起安装器（不在前台或被系统拦下则退回通知） */
                                 new Thread(new Runnable() {
                                     public void run() {
-                                        final Intent it = prepareInstallIntent();
+                                        final Intent it = prepareInstallIntent(apkName);
                                         if (it == null) return;
                                         runOnUiThread(new Runnable() {
                                             public void run() {
                                                 if (!alive || isFinishing()) return;
+                                                if (!inForeground) {
+                                                    postInstallReadyNotification(it);
+                                                    return;
+                                                }
                                                 try {
                                                     startActivity(it);
                                                 } catch (Exception t) {
@@ -458,18 +520,19 @@ public class MainActivity extends Activity {
             } catch (Exception ignored) { }
         }
 
-        /** 把下载目录里的 apk 复制到 cacheDir/share，返回能拉起系统安装器的 Intent */
-        private Intent prepareInstallIntent() {
+        /** 把下载目录里的 apk 复制到 cacheDir/share，返回能拉起系统安装器的 Intent。
+            apkName 是完成回调在锁里快照后传进来的，这里不直接读字段。 */
+        private Intent prepareInstallIntent(String apkName) {
             try {
                 File dir = new File(getCacheDir(), "share");
                 if (!dir.exists() && !dir.mkdirs()) return null;
                 File src = new File(Environment.getExternalStoragePublicDirectory(
-                        Environment.DIRECTORY_DOWNLOADS), lastApkName);
+                        Environment.DIRECTORY_DOWNLOADS), apkName);
                 if (!src.exists()) return null;
-                File out = new File(dir, lastApkName);
+                File out = new File(dir, apkName);
                 copyFile(src, out);
                 Intent it = new Intent(Intent.ACTION_VIEW);
-                it.setDataAndType(Uri.parse("content://com.sqzytc.timetable.files/" + lastApkName),
+                it.setDataAndType(Uri.parse("content://com.sqzytc.timetable.files/" + apkName),
                         "application/vnd.android.package-archive");
                 it.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
                 return it;
@@ -598,11 +661,13 @@ public class MainActivity extends Activity {
                 /* 页面是「HTML 文本 + 基地址」塞进去的，每次热替换都会多一条历史，
                    不清掉的话按返回键会退回到替换前那版界面 */
                 v.clearHistory();
-                /* 只有壳自己加载的内容算「可信页」。正常只有 loadDataWithBaseURL
-                   （基地址 https://gitee.com/）和内置 assets 两种；URL 对不上就视为不可信，
-                   桥里敏感的下载/分享/读网络方法会拒绝执行。 */
-                pageTrusted = (url == null) || url.startsWith("https://gitee.com/")
-                        || url.startsWith("file:///android_asset/");
+                /* 反向判定：shouldOverrideUrlLoading 已拦掉所有页面内导航，壳内出现的
+                   http(s) 地址只可能来自自己 loadDataWithBaseURL 的基地址（gitee）；
+                   data:/about:blank/file:/null 都是壳自己产生的内容，不算不可信。 */
+                boolean untrusted = url != null
+                        && (url.startsWith("http://") || url.startsWith("https://"))
+                        && !url.startsWith("https://gitee.com/");
+                pageTrusted = !untrusted;
             }
 
             @Override
@@ -916,6 +981,18 @@ public class MainActivity extends Activity {
             }
         }
         return super.onKeyDown(keyCode, event);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        inForeground = true;
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        inForeground = false;
     }
 
     @Override
