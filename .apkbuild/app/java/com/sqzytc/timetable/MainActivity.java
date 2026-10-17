@@ -133,40 +133,103 @@ public class MainActivity extends Activity {
             sheetOpen = open;
         }
 
-        /** 分享安装包（#G）：把本机这份 apk 通过微信 / QQ / 蓝牙发给同学 */
+        /** 分享安装包（#G）：把本机这份 apk 通过微信 / QQ / 蓝牙发给同学。
+            优先用本机已有文件；本机这份不可读/为空时，现下载一份再分享（urls 用 \n 分隔，依次尝试）。 */
         @JavascriptInterface
-        public String shareApk() {
+        public String shareApk(final String urls) {
             try {
                 final String name = "sqzy-timetable-" + version() + ".apk";
                 File dir = new File(getCacheDir(), "share");
                 if (!dir.exists() && !dir.mkdirs()) return "fail";
-                File out = new File(dir, name);
-                File src = new File(Environment.getExternalStoragePublicDirectory(
+                final File out = new File(dir, name);
+
+                /* 1) 下载目录里那份（可能早先是 0 字节占位文件）—— 只认大于 1KB 的 */
+                File dl = new File(Environment.getExternalStoragePublicDirectory(
                         Environment.DIRECTORY_DOWNLOADS), name);
-                /* 下载目录里可能是早先失败留下的 0 字节占位文件 —— 那就退回"正在运行的这份 apk"，
-                   否则分享出去的就是空文件（接收方报「文件不存在 / 空文件」）。 */
-                if (!src.exists() || src.length() < 1024) src = new File(getPackageCodePath());
-                copyFile(src, out);
-                if (out.length() < 1024) return "empty";
-                final Uri uri = Uri.parse("content://com.sqzytc.timetable.files/" + name);
-                final Intent it = new Intent(Intent.ACTION_SEND);
-                it.setType("application/vnd.android.package-archive");
-                it.putExtra(Intent.EXTRA_STREAM, uri);
-                /* 除了 EXTRA_STREAM，还要把 Uri 放进 ClipData 并显式授权：
-                   微信 / QQ 这类应用是异步去拉内容的，只带 flag 会读不到（表现为空文件）。 */
-                it.setClipData(ClipData.newRawUri("apk", uri));
-                it.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                runOnUiThread(new Runnable() {
+                if (dl.exists() && dl.length() >= 1024 && dl.canRead()) {
+                    try { copyFile(dl, out); } catch (Exception ignored) { }
+                }
+                /* 2) 正在运行的这份 apk */
+                if (!usable(out)) {
+                    try { copyFile(new File(getPackageCodePath()), out); } catch (Exception ignored) { }
+                }
+                if (usable(out)) { sendApk(out, name); return "ok"; }
+
+                /* 3) 本机这份分享不出去（读不到/复制失败）→ 现下一份再分享 */
+                final String[] list = (urls == null ? "" : urls).split("\n");
+                new Thread(new Runnable() {
                     public void run() {
-                        Intent chooser = Intent.createChooser(it, "把安装包发给");
-                        chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                        startActivity(chooser);
+                        for (String u : list) {
+                            u = u.trim();
+                            if (!(u.startsWith("http://") || u.startsWith("https://"))) continue;
+                            try {
+                                downloadTo(u, out);
+                                if (usable(out)) { sendApk(out, name); return; }
+                            } catch (Exception ignored) { }
+                        }
+                        toastOnUi("安装包下载失败，请先用「一键下载安装包」存一份");
                     }
-                });
-                return "ok";
+                }).start();
+                return "downloading";
             } catch (Exception t) {
                 return "fail";
             }
+        }
+
+        private boolean usable(File f) {
+            return f != null && f.exists() && f.canRead() && f.length() >= 1024;
+        }
+
+        /** 下载到目标文件：先写 .part 再改名，避免分享到半截文件 */
+        private void downloadTo(String url, File dst) throws Exception {
+            File part = new File(dst.getParentFile(), dst.getName() + ".part");
+            HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+            c.setConnectTimeout(15000);
+            c.setReadTimeout(60000);
+            c.setInstanceFollowRedirects(true);
+            java.io.InputStream in = c.getInputStream();
+            java.io.OutputStream os = new java.io.FileOutputStream(part);
+            try {
+                byte[] buf = new byte[16384];
+                int n;
+                while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
+                os.flush();
+            } finally {
+                try { in.close(); } catch (Exception ignored) { }
+                try { os.close(); } catch (Exception ignored) { }
+                try { c.disconnect(); } catch (Exception ignored) { }
+            }
+            if (part.length() < 1024 || !part.renameTo(dst)) {
+                try { part.delete(); } catch (Exception ignored) { }
+                throw new Exception("download failed");
+            }
+        }
+
+        private void sendApk(final File f, final String name) {
+            final Uri uri = Uri.parse("content://com.sqzytc.timetable.files/" + name);
+            final Intent it = new Intent(Intent.ACTION_SEND);
+            it.setType("application/vnd.android.package-archive");
+            it.putExtra(Intent.EXTRA_STREAM, uri);
+            /* EXTRA_STREAM + ClipData 双写、并给 chooser 补授权：
+               微信 / QQ 是异步去拉内容的，只带 flag 会读不到（表现就是「空文件」）。 */
+            it.setClipData(ClipData.newRawUri("apk", uri));
+            it.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    Intent chooser = Intent.createChooser(it, "把安装包发给");
+                    chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    startActivity(chooser);
+                }
+            });
+        }
+
+        private void toastOnUi(final String msg) {
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    try { android.widget.Toast.makeText(MainActivity.this, msg, android.widget.Toast.LENGTH_LONG).show(); }
+                    catch (Exception ignored) { }
+                }
+            });
         }
 
         private void copyFile(File src, File dst) throws Exception {
