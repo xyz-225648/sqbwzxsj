@@ -132,17 +132,16 @@ def load_current_html():
         if page_ver(cached) > page_ver(emb):
             return cached
         if page_ver(cached) == page_ver(emb):
-            # 同版本热修页（版本号没升、只改了内容）：缓存比内置页新就继续用缓存，
-            # 否则热修页重启一次就丢。mtime 比内容哈希便宜，先比它，哈希相同兜底。
-            cpath = os.path.join(cache_dir(), 'index.html')
-            epath = os.path.join(base_dir(), HTML_NAME)
+            # 同版本热修页（版本号没升、只改了内容）：以 cache_meta.json 为准 ——
+            # meta 里的 h 与缓存内容 sha256 一致，说明这份缓存是热更新完整写入的，继续用；
+            # 没有 meta（旧缓存）或对不上（半截写/被改过）一律用内置页，防降级。
+            chash = hashlib.sha256(cached.encode('utf-8')).hexdigest()
+            meta = read_text(os.path.join(cache_dir(), 'cache_meta.json'))
             try:
-                if os.path.getmtime(cpath) > os.path.getmtime(epath):
-                    return cached
+                mh = json.loads(meta).get('h') if meta else None
             except Exception:
-                pass
-            if hashlib.sha256(
-                    cached.encode('utf-8')).hexdigest() == hashlib.sha256(emb.encode('utf-8')).hexdigest():
+                mh = None
+            if mh == chash:
                 return cached
         return emb
     return emb
@@ -260,7 +259,12 @@ def _try_base(base):
         if page_ver(html) < page_ver(cur) or (page_ver(html) == page_ver(cur) and same_hash):
             api_log('线上页面版本/内容不比本地新，跳过缓存覆盖', 'warn')
             return None, None
-        write_text(os.path.join(cache_dir(), 'index.html'), html)
+        if write_text(os.path.join(cache_dir(), 'index.html'), html):
+            # 缓存写成功才落 meta：load_current_html 靠「meta.h == 缓存内容 sha256」
+            # 判定这份缓存是本轮完整写入的，旧缓存/半截写没有 meta 或对不上，走内置页防降级。
+            meta = json.dumps({'h': hashlib.sha256(html.encode('utf-8')).hexdigest()},
+                              ensure_ascii=False)
+            write_text(os.path.join(cache_dir(), 'cache_meta.json'), meta)
         write_text(os.path.join(cache_dir(), 'version.txt'), remote_ver)
         return html, remote_ver
     except Exception:
