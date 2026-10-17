@@ -3,8 +3,10 @@ package com.sqzytc.timetable;
 import android.content.ContentProvider;
 import android.content.ContentValues;
 import android.database.Cursor;
+import android.database.MatrixCursor;
 import android.net.Uri;
 import android.os.ParcelFileDescriptor;
+import android.provider.OpenableColumns;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -43,7 +45,20 @@ public class ApkProvider extends ContentProvider {
     @Override
     public Cursor query(Uri uri, String[] projection, String selection,
                         String[] selectionArgs, String sortOrder) {
-        return null;
+        /* 接收方（微信 / QQ / 部分文件管理器）会先 query DISPLAY_NAME + SIZE 判断文件在不在，
+           以前直接返回 null，它们就当「文件不存在」。这里如实返回。 */
+        try {
+            String name = uri.getLastPathSegment();
+            File f = new File(new File(getContext().getCacheDir(), "share"), name == null ? "" : name);
+            if (!f.exists()) return null;
+            String[] cols = new String[] {
+                    OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE };
+            MatrixCursor c = new MatrixCursor(cols, 1);
+            c.addRow(new Object[] { f.getName(), f.length() });
+            return c;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     @Override
