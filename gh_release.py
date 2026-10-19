@@ -22,7 +22,26 @@ TAGS = sorted({'v1.0'} | {_TAG_RE.match(ln).group(1) for ln in io.open(
     os.path.join(HERE, 'CHANGELOG.md'), encoding='utf-8').read().splitlines()
     if _TAG_RE.match(ln)},
     key=lambda v: tuple(int(x) for x in v[1:].split('.')))
-LATEST = TAGS[-1]   # 最后一个当"最新版"，附件挂在它上面
+
+
+def _installer_tag():
+    """程序本体版本以 program.txt 为准：页面热更可以比它新（例如 v2.4.8），
+    但 exe/apk 附件只挂在真正打过包的 tag 上，否则会去下不存在的安装包。"""
+    for rel in ('program.txt', os.path.join('release', 'program.txt')):
+        fp = os.path.join(HERE, rel)
+        if not os.path.exists(fp):
+            continue
+        m = re.search(r'"tag"\s*:\s*"(v[0-9.]+)"', io.open(fp, encoding='utf-8').read())
+        if m:
+            return m.group(1)
+    return None
+
+
+_INST = _installer_tag()
+if _INST and _INST not in TAGS:
+    TAGS.append(_INST)
+    TAGS.sort(key=lambda v: tuple(int(x) for x in v[1:].split('.')))
+LATEST = _INST or TAGS[-1]   # 附件挂在「程序本体版本」那个 tag 上
 # 附件名用 ASCII：GitHub 会把非 ASCII 名字削成 default.exe / -.png（踩过）
 ASSETS = [
     ('宿迁职业技术学院作息时间表.exe', 'sqzy-timetable-%s-windows.exe' % LATEST,
