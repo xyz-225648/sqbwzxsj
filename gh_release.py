@@ -41,12 +41,18 @@ _INST = _installer_tag()
 if _INST and _INST not in TAGS:
     TAGS.append(_INST)
     TAGS.sort(key=lambda v: tuple(int(x) for x in v[1:].split('.')))
-LATEST = _INST or TAGS[-1]   # 附件挂在「程序本体版本」那个 tag 上
+# 两个概念分开：
+#   INST    —— 程序本体版本（program.txt 的 tag），安装包文件的来源；
+#   TARGET  —— 最新发行版（CHANGELOG 里最高的 tag），用户从发行版页进来的那个；
+# 安装包挂到 TARGET 上（页面热更版本也能看到安装包），文件名与下载地址仍用 INST。
+INST = _INST or TAGS[-1]
+TARGET = TAGS[-1]
+LATEST = TARGET
 # 附件名用 ASCII：GitHub 会把非 ASCII 名字削成 default.exe / -.png（踩过）
 ASSETS = [
-    ('宿迁职业技术学院作息时间表.exe', 'sqzy-timetable-%s-windows.exe' % LATEST,
+    ('宿迁职业技术学院作息时间表.exe', 'sqzy-timetable-%s-windows.exe' % INST,
      'https://gitee.com/xyz-225648/sqbwzxsj/releases/download/%s/%%E5%%AE%%BF%%E8%%BF%%81%%E8%%81%%8C%%E4%%B8%%9A%%E6%%8A%%80%%E6%%9C%%AF%%E5%%AD%%A6%%E9%%99%%A2%%E4%%BD%%9C%%E6%%81%%AF%%E6%%97%%B6%%E9%%97%%B4%%E8%%A1%%A8.exe' % LATEST),
-    ('宿迁职业技术学院作息时间表.apk', 'sqzy-timetable-%s-android.apk' % LATEST,
+    ('宿迁职业技术学院作息时间表.apk', 'sqzy-timetable-%s-android.apk' % INST,
      'https://gitee.com/xyz-225648/sqbwzxsj/releases/download/%s/%%E5%%AE%%BF%%E8%%BF%%81%%E8%%81%%8C%%E4%%B8%%9A%%E6%%8A%%80%%E6%%9C%%AF%%E5%%AD%%A6%%E9%%99%%A2%%E4%%BD%%9C%%E6%%81%%AF%%E6%%97%%B6%%E9%%97%%B4%%E8%%A1%%A8.apk' % LATEST),
     ('宿迁职业技术学院作息时间表.png', 'sqzy-timetable-desktop.png', None),
     ('宿迁职业技术学院作息时间表-手机版.png', 'sqzy-timetable-mobile.png', None)]
@@ -169,9 +175,9 @@ def cmd_sync():
     bad = 0
     for tag in TAGS:
         body = NOTE + changelog(tag)
-        if tag != LATEST:
+        if tag != TARGET:
             body += ('\n\n### 附件\n\n本页只作版本记录（安装包请见最新版 **%s**，'
-                     '或 [Gitee 发行版](https://gitee.com/xyz-225648/sqbwzxsj/releases)）。' % LATEST)
+                     '或 [Gitee 发行版](https://gitee.com/xyz-225648/sqbwzxsj/releases)）。' % TARGET)
         else:
             body += '\n\n### 附件\n\n最新安装包见下方 Assets（exe 免安装、apk 直接覆盖安装）。'
         name = '宿迁职业技术学院作息时间表 ' + tag
@@ -202,7 +208,7 @@ def cmd_sync():
         if st not in (200, 201):
             bad += 1
             continue
-        if tag == LATEST:
+        if tag == TARGET:
             for path, label, url in ASSETS:
                 src = asset_file(path, url)
                 if not src:
