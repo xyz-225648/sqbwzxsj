@@ -498,12 +498,18 @@ var HOLIDAY_TRACKS = WEEKDAY_TRACKS.map(function(t){
   return { name:t.name, close:'19:00', accent:t.accent, ink:t.ink, flash:t.flash, head:t.head,
            rest:[0,1,2,3,4,5,6,7,8,9,10,11,12], times:HOLIDAY_TIMES.slice() };
 });
+var EVENT_TRACKS = WEEKDAY_TRACKS.map(function(t){
+  /* 运动会/考试这类“全天不上课但不是假期”：全天休息，关寝沿用本学院周内时间 */
+  var times = [], i; for (i = 0; i < 13; i++) times.push('7:30-' + t.close);
+  return { name:t.name, close:t.close, accent:t.accent, ink:t.ink, flash:t.flash, head:t.head,
+           rest:[0,1,2,3,4,5,6,7,8,9,10,11,12], times:times };
+});
 var SCHEDULES = {
   weekday:  { label:'周一至周五 · 常规', tracks:WEEKDAY_TRACKS },
   saturday: { label:'周六 · 半天课（19:00 关寝）', tracks:SATURDAY_TRACKS },
   sunday:   { label:'周日 · 白天休息（晚自习照常）', tracks:SUNDAY_TRACKS },
   holiday:  { label:'放假 · 全天休息（19:00 关寝）', tracks:HOLIDAY_TRACKS },
-  event:    { label:'活动 · 全天不上课（19:00 关寝）', tracks:HOLIDAY_TRACKS }
+  event:    { label:'活动 · 全天不上课（关寝按各学院时间）', tracks:EVENT_TRACKS }
 };
 
 /* ===================== 特殊日覆盖表 =====================
@@ -1432,13 +1438,13 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.4.7';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.4.8';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 页面热更新（version.txt）的发行版 tag：主要用来取 index.html 附件，跟页面版本号走。
    程序本体（exe/apk）的下载 tag 在 program.txt 里单独记（= 程序本体版本），两者分开算；
    只有 program.txt 拿不到时才拿 RELEASE_TAG 兜底。 */
-var RELEASE_TAG = 'v2.4.7';
+var RELEASE_TAG = 'v2.4.8';
 var latestInfo = null;
 /* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
 var SHELL_SEEN_KEY = 'sqzy-seen-shell';
