@@ -18,6 +18,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.parse
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -73,6 +74,12 @@ def build(html_path, page_ver, stamp):
         raise SystemExit('✗ exe 版本 %s 与 apk 版本 %s 不一致：现在一个发行版 tag 同时装两个包，两者必须一起升' % (exe, apk))
     tag = exe
     base = 'https://gitee.com/xyz-225648/sqbwzxsj/releases/download/%s/' % tag
+    # t 用安装包的修改时间，而不是「这次生成的时间」：只要没重打包，反复 publish 得到同一份 program.txt，
+    # 免得每次发布都因为时间戳不同而多提交一次。
+    mtimes = [os.path.getmtime(os.path.join(ROOT, n)) for n in BASES.values()
+              if os.path.exists(os.path.join(ROOT, n))]
+    if mtimes:
+        stamp = time.strftime('%Y-%m-%d %H:%M', time.localtime(max(mtimes)))
     info = {'exe': exe, 'apk': apk, 'tag': tag, 't': stamp}
     path = APK_REPO_NAME % tag
     info['apkRepoPath'] = path
