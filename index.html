@@ -138,6 +138,12 @@ if (/Android/i.test(navigator.userAgent || '')) document.documentElement.setAttr
   .nowitem .cd.end{color:#be123c}      /* 正在上课：还有多久下课 */
   .nowitem .cd.next{color:#1d4ed8}     /* 课间/午休/晚休：还有多久上课 */
   .nowitem .cd.prep{color:#64748b}     /* 晚自习结束到关寝之间 */
+  .card-note{font-size:11px;color:var(--ink2);margin:4px 0 2px;letter-spacing:.1px}
+  .daynote.ovnote{color:#1d4ed8;background:#eff6ff;border-color:#bfdbfe}
+  @media (max-width:700px){
+    .settest,.devbtn{min-height:44px}
+    .totop{width:44px;height:44px}
+  }
   .daynote{flex:1 1 100%;font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:6px 10px}
   .holiday-cd{flex:1 1 100%;font-size:12px;font-weight:700;color:#065f46;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:6px 10px}
 
@@ -297,11 +303,11 @@ if (/Android/i.test(navigator.userAgent || '')) document.documentElement.setAttr
            padding:2px 1px;box-shadow:0 2px 7px rgba(15,23,42,.22);z-index:7;pointer-events:none}
   .vt-chip.on{display:block}
   .vt-chip.up{transform:translateY(calc(-100% - 10px))}
-  .vt-chip b{display:block;font-size:10px;font-weight:700;color:#0f172a;white-space:nowrap;
+  .vt-chip b{display:block;font-size:11px;font-weight:700;color:#0f172a;white-space:nowrap;
              overflow:hidden;text-overflow:ellipsis}
-  .vt-chip i{display:block;font-style:normal;font-size:9px;color:#64748b;white-space:nowrap}
+  .vt-chip i{display:block;font-style:normal;font-size:11px;color:#64748b;white-space:nowrap}
   .vt-close-tag{position:absolute;left:50%;transform:translateX(-50%);margin-top:3px;
-                font-size:9.5px;font-weight:700;color:#b91c1c;white-space:nowrap;
+                font-size:11px;font-weight:700;color:#b91c1c;white-space:nowrap;
                 background:rgba(255,255,255,.92);border-radius:999px;padding:1px 5px;
                 z-index:3;pointer-events:none;font-variant-numeric:tabular-nums}
   .vt-now,.vt-guide{position:absolute;left:0;right:0;height:2px;margin-top:-1px;display:none;pointer-events:none}
@@ -456,7 +462,7 @@ var SHORT = {'第一节课':'1','第二节课':'2','第三节课':'3','第四节
              '晚一':'晚1','晚二':'晚2','晚三':'晚3'};
 var CATNAME = {am:'上午正课', noon:'午休', pm:'下午正课', eve:'晚休', night:'晚自习', close:'关寝'};
 
-var WEEKDAY_TRACKS = [
+var ALL_TRACKS = [
   { name:'信息设计', close:'21:10', accent:'#2563eb', ink:'#ffffff', flash:'rgba(37,99,235,.42)',
     head:'linear-gradient(135deg,#1d4ed8,#3b82f6)',
     times:['8:00-8:45','8:55-9:40','9:50-10:35','10:45-11:30','11:30-13:30','13:30-14:15','14:25-15:10','15:20-16:05','16:15-17:00','17:00-18:10','18:10-18:55','19:05-19:50','20:00-20:40'] },
@@ -468,8 +474,21 @@ var WEEKDAY_TRACKS = [
     times:['8:30-9:15','9:25-10:10','10:20-11:05','11:15-12:00','12:00-14:20','14:20-15:05','15:15-16:00','16:10-16:55','17:05-17:50','17:50-18:40','18:40-19:25','19:35-20:20','20:30-21:10'] },
   { name:'女子教育', close:'21:10', accent:'#ea580c', ink:'#ffffff', flash:'rgba(234,88,12,.42)',
     head:'linear-gradient(135deg,#c2410c,#f97316)',
-    times:['8:00-8:45','8:55-9:40','9:50-10:35','10:45-11:30','11:30-13:40','13:40-14:25','14:35-15:20','15:30-16:15','16:25-17:10','17:10-18:00','18:00-18:45','18:55-19:40','19:50-20:40'] }
+    times:['8:00-8:45','8:55-9:40','9:50-10:35','10:45-11:30','11:30-13:40','13:40-14:25','14:35-15:20','15:30-16:15','16:25-17:10','17:10-18:00','18:00-18:45','18:55-19:40','19:50-20:40'] },
+  { name:'专业基础', opt:true, close:'21:50', accent:'#00FFFF', ink:'#0f172a', flash:'rgba(0,255,255,.30)',
+    head:'linear-gradient(135deg,#00FFFF,#67e8f9)',
+    note:'8:00–8:30 晨会（不计入课程行）',
+    times:['8:30-9:15','9:25-10:10','10:20-11:05','11:15-12:00','12:00-13:30','13:30-14:15','14:25-15:10','15:20-16:05','16:15-17:00','17:00-18:30','18:30-19:15','19:25-20:10','20:20-21:00'],
+    satTimes:['8:30-9:15','9:25-10:10','10:20-11:05','11:15-12:00','12:00-19:00','12:00-19:00','12:00-19:00','12:00-19:00','12:00-19:00','12:00-19:00','12:00-19:00','12:00-19:00','12:00-19:00'] }
 ];
+
+/* 可选学院（opt:true）默认不显示，只有用户在本机设置里打开才出现。
+   过滤在模板构建之前完成，下游（甘特/卡片/倒计时/通知）全部按可见学院走。 */
+var SHOW_KEY = 'sqzy-show-tracks';
+function shownTracks(){
+  try { var a = JSON.parse(localStorage.getItem(SHOW_KEY) || '[]'); return a instanceof Array ? a : []; } catch (e) { return []; }
+}
+var WEEKDAY_TRACKS = ALL_TRACKS.filter(function(t){ return !t.opt || shownTracks().indexOf(t.name) >= 0; });
 
 /* ===================== 多套作息模板 =====================
    基础数据：工作日(周一~五)沿用 WEEKDAY_TRACKS；
@@ -482,7 +501,7 @@ var SAT_TIMES = ['8:00-8:45','8:55-9:40','9:50-10:35','10:45-11:30','11:30-14:00
                  '14:00-19:00','14:00-19:00','14:00-19:00'];
 var SATURDAY_TRACKS = WEEKDAY_TRACKS.map(function(t){
   return { name:t.name, close:'19:00', accent:t.accent, ink:t.ink, flash:t.flash, head:t.head,
-           rest:[5,6,7,8,9,10,11,12], times:SAT_TIMES.slice() };
+           rest:[5,6,7,8,9,10,11,12], times:(t.satTimes || SAT_TIMES).slice() };
 });
 var SUNDAY_TRACKS = WEEKDAY_TRACKS.map(function(t){
   var times = t.times.slice();
@@ -906,6 +925,7 @@ function renderCards(){
     return '<div class="card" style="--flash:' + t.flash + '"><div class="card-h" style="background:' + t.head + ';color:' + t.ink + '">' +
            '<div class="t">' + t.name + '</div>' +
            '<div class="m"></div><div class="cd"></div></div>' +
+           (t.note ? '<div class="card-note">' + t.note + '</div>' : '') +
            '<ul class="vtl">' + items.join('') + closeLi + '</ul></div>';
   }).join('');
   var cards = [].slice.call(el.querySelectorAll('.card'));
@@ -942,6 +962,12 @@ function renderNow(){
       ? (['周日','周一','周二','周三','周四','周五','周六'][d.getDay()] + ' · ' + _spNote)
       : sched.label;
     html += '<div class="daynote">今日：' + _dn + '，请以学校实际安排为准。</div>';
+  }
+  var _ovNow = todayOverride();
+  if (_ovNow && SCHEDULES[_ovNow]){
+    var _autoTpl = SCHEDULES[d.getDay() === 0 ? 'sunday' : (d.getDay() === 6 ? 'saturday' : 'weekday')];
+    html += '<div class="daynote ovnote">本机手动覆盖：' + SCHEDULES[_ovNow].label.replace(/ · .*/, '')
+          + '　·　自动规则：' + _autoTpl.label.replace(/ · .*/, '') + '（可在「今天按」里改回自动）</div>';
   }
   var _hc = holidayCountdown(d);
   if (_hc){
@@ -1438,13 +1464,13 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.4.8';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.4.9';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 页面热更新（version.txt）的发行版 tag：主要用来取 index.html 附件，跟页面版本号走。
    程序本体（exe/apk）的下载 tag 在 program.txt 里单独记（= 程序本体版本），两者分开算；
    只有 program.txt 拿不到时才拿 RELEASE_TAG 兜底。 */
-var RELEASE_TAG = 'v2.4.8';
+var RELEASE_TAG = 'v2.4.9';
 var latestInfo = null;
 /* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
 var SHELL_SEEN_KEY = 'sqzy-seen-shell';
@@ -1470,7 +1496,7 @@ function loadCfg(){
   try{ var raw = safeGet(NOTIFY_KEY); if (raw) { var o = JSON.parse(raw);
     for (var k in notifyCfg) if (o[k] !== undefined) notifyCfg[k] = o[k];
     normCfg();
-    if (!(notifyCfg.tracks instanceof Array) || notifyCfg.tracks.length !== 4) notifyCfg.tracks = [true,true,true,true];
+    if (!(notifyCfg.tracks instanceof Array) || notifyCfg.tracks.length !== WEEKDAY_TRACKS.length) notifyCfg.tracks = WEEKDAY_TRACKS.map(function(){ return true; });
   } }catch(e){}
   try{ var f = safeGet(FIRED_KEY); if (f) firedKeys = JSON.parse(f) || {}; }catch(e){}
 }
@@ -1498,8 +1524,8 @@ function adoptCfgFromShell(){
       if (!st || !st.cfg || (st.t || 0) <= cfgStamp()) return;
       for (var k in notifyCfg) if (st.cfg[k] !== undefined) notifyCfg[k] = st.cfg[k];
       normCfg();
-      if (!(notifyCfg.tracks instanceof Array) || notifyCfg.tracks.length !== 4){
-        notifyCfg.tracks = [true,true,true,true];
+      if (!(notifyCfg.tracks instanceof Array) || notifyCfg.tracks.length !== WEEKDAY_TRACKS.length){
+        notifyCfg.tracks = WEEKDAY_TRACKS.map(function(){ return true; });
       }
       safeSet(NOTIFY_KEY, JSON.stringify(notifyCfg));
       safeSet(CFG_T_KEY, String(st.t || Date.now()));
@@ -2335,6 +2361,10 @@ function initSettings(){
           '<div class="setnote" id="calNote"></div>' +
           '<button class="settest" id="setTest" type="button">发一条测试通知</button>' +
           '<div class="setnote" id="setNote"></div>' +
+          '<div class="setsec">学院显示</div>' +
+          '<div class="setrow"><label><input type="checkbox" id="setOptTrack"> 显示「专业基础」学院（默认关闭）' +
+            '<span style="font-size:11px;color:#94a3b8;margin-left:6px">勾选后页面会重新加载</span></label></div>' +
+          '<div class="setnote">四学院是默认视图；「专业基础」是可选项，关掉它就回到原来的四列。</div>' +
           '<div class="setsec">关于</div>' +
           '<div class="setrow" style="gap:14px">' +
             '<a href="https://github.com/xyz-225648/sqbwzxsj" id="aboutGh" style="font-size:12px;color:#1d4ed8;text-decoration:none">GitHub 项目主页</a>' +
@@ -2473,6 +2503,16 @@ function initSettings(){
   document.addEventListener('keydown', function(e){
     if (e.key === 'Escape' && sheet.classList.contains('on')) sheetClose(sheet);
   });
+  var optCb = document.getElementById('setOptTrack');
+  if (optCb){
+    optCb.checked = shownTracks().indexOf('专业基础') >= 0;
+    optCb.addEventListener('change', function(){
+      var list = shownTracks().filter(function(n){ return n !== '专业基础'; });
+      if (optCb.checked) list.push('专业基础');
+      try { localStorage.setItem(SHOW_KEY, JSON.stringify(list)); } catch (e) {}
+      location.reload();
+    });
+  }
   var aboutBtn = document.getElementById('aboutCheck');
   if (aboutBtn) aboutBtn.addEventListener('click', function(){ checkAppUpdate(true); });
   ['aboutGh', 'aboutGitee'].forEach(function(id){
