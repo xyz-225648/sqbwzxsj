@@ -49,46 +49,63 @@ INST = _INST or TAGS[-1]
 TARGET = TAGS[-1]
 LATEST = TARGET
 # 附件名用 ASCII：GitHub 会把非 ASCII 名字削成 default.exe / -.png（踩过）
+_REL = 'https://gitee.com/xyz-225648/sqbwzxsj/releases/download/%s/' % INST
+_ENEXE = '%E5%AE%BF%E8%BF%81%E8%81%8C%E4%B8%9A%E6%8A%80%E6%9C%AF%E5%AD%A6%E9%99%A2%E4%BD%9C%E6%81%AF%E6%97%B6%E9%97%B4%E8%A1%A8.exe'
+_ENAPK = '%E5%AE%BF%E8%BF%81%E8%81%8C%E4%B8%9A%E6%8A%80%E6%9C%AF%E5%AD%A6%E9%99%A2%E4%BD%9C%E6%81%AF%E6%97%B6%E9%97%B4%E8%A1%A8.apk'
+_APK_MIRROR = 'apk/sqzy-timetable-%s.apk' % INST
 ASSETS = [
     ('宿迁职业技术学院作息时间表.exe', 'sqzy-timetable-%s-windows.exe' % INST,
-     'https://gitee.com/xyz-225648/sqbwzxsj/releases/download/%s/%%E5%%AE%%BF%%E8%%BF%%81%%E8%%81%%8C%%E4%%B8%%9A%%E6%%8A%%80%%E6%%9C%%AF%%E5%%AD%%A6%%E9%%99%%A2%%E4%%BD%%9C%%E6%%81%%AF%%E6%%97%%B6%%E9%%97%%B4%%E8%%A1%%A8.exe' % LATEST),
+     [_REL + _ENEXE, _REL + _ENEXE + '?download=1']),
     ('宿迁职业技术学院作息时间表.apk', 'sqzy-timetable-%s-android.apk' % INST,
-     'https://gitee.com/xyz-225648/sqbwzxsj/releases/download/%s/%%E5%%AE%%BF%%E8%%BF%%81%%E8%%81%%8C%%E4%%B8%%9A%%E6%%8A%%80%%E6%%9C%%AF%%E5%%AD%%A6%%E9%%99%%A2%%E4%%BD%%9C%%E6%%81%%AF%%E6%%97%%B6%%E9%%97%%B4%%E8%%A1%%A8.apk' % LATEST),
+     [_REL + _ENAPK, _REL + _ENAPK + '?download=1',
+      'https://cdn.jsdelivr.net/gh/xyz-225648/sqbwzxsj@master/' + _APK_MIRROR,
+      'https://fastly.jsdelivr.net/gh/xyz-225648/sqbwzxsj@master/' + _APK_MIRROR]),
     ('宿迁职业技术学院作息时间表.png', 'sqzy-timetable-desktop.png', None),
     ('宿迁职业技术学院作息时间表-手机版.png', 'sqzy-timetable-mobile.png', None)]
 NOTE = ('> 本仓库是**主仓库**（开发、PR、发行都在这里）；'
         '[Gitee 仓库](https://gitee.com/xyz-225648/sqbwzxsj) 是镜像，两边双向同步。' + chr(10) * 2)
 
 
-def asset_file(local, url):
-    """本地有就直接用；没有（GitHub Actions 环境）就从 Gitee 下载到临时目录。
-    两段式：正式名只会由 .part 下载完整后 os.replace 生成，所以正式名存在即可直接复用，
-    半截下载只会留在 .part，永远混不进上传路径。"""
+def asset_file(local, urls):
+    """本地有就直接用；没有（GitHub Actions 环境）就依次尝试给定的下载地址。
+    每个地址最多 3 次（Gitee 对机房 IP 偶发 404 / 连接重置）；
+    两段式：正式名只由完整下载后的 os.replace 产生，半截只会留在 .part。"""
     if os.path.exists(local):
         return local
-    if not url:
+    if not urls:
         return None
+    if isinstance(urls, str):
+        urls = [urls]
     tmp = os.path.join(tempfile.gettempdir(), os.path.basename(local))
     if os.path.exists(tmp):
         return tmp
-    print('    · 本地没有 %s，从 Gitee 下载…' % os.path.basename(local))
+    print('    · 本地没有 %s，从远端下载…' % os.path.basename(local))
     part = tmp + '.part'
-    try:
-        with urllib.request.urlopen(url, timeout=600) as r, open(part, 'wb') as f:
-            while True:
-                chunk = r.read(1 << 16)
-                if not chunk:
-                    break
-                f.write(chunk)
-        os.replace(part, tmp)
-        return tmp
-    except Exception as exc:
-        try:
-            os.remove(part)
-        except Exception:
-            pass
-        print('    ✗ 下载失败 %r' % exc)
-        return None
+    for url in urls:
+        for attempt in range(3):
+            try:
+                req = urllib.request.Request(url, headers={
+                    'User-Agent': 'sqzy-rel/1.0 (+https://gitee.com/xyz-225648/sqbwzxsj)',
+                    'Accept': '*/*',
+                    'Referer': 'https://gitee.com/xyz-225648/sqbwzxsj/releases',
+                })
+                with urllib.request.urlopen(req, timeout=600) as r, open(part, 'wb') as f:
+                    while True:
+                        chunk = r.read(1 << 16)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                os.replace(part, tmp)
+                print('      ✓ 已下载（来源 %s）' % url.split('?')[0][:90])
+                return tmp
+            except Exception as exc:
+                try:
+                    os.remove(part)
+                except Exception:
+                    pass
+                if attempt == 2:
+                    print('    ✗ %s 失败 %r' % (url.split('?')[0][:80], exc))
+    return None
 
 
 def api(method, path, payload=None, timeout=120):
@@ -209,8 +226,8 @@ def cmd_sync():
             bad += 1
             continue
         if tag == TARGET:
-            for path, label, url in ASSETS:
-                src = asset_file(path, url)
+            for path, label, urls in ASSETS:
+                src = asset_file(path, urls)
                 if not src:
                     if url:
                         # 有官方直链却拿不到（本地没有 + 下载失败）是硬失败，不能静默 OK
