@@ -683,6 +683,14 @@ var TRACKS = WEEKDAY_TRACKS;   /* 全局生效作息：applySchedule() 每天按
    下游所有渲染 / 倒计时 / 悬停 / 通知都读这两个全局变量，切换后自动生效；
    返回 true 表示日期已切换（调用方据此决定是否重绘甘特图等静态部分）。 */
 var _curDay = '';
+/* 通知开关数组长度跟随可见学院：保留用户已有勾选，新增学院默认勾上，缩回时截断。
+   以前是「长度不等就重置成全 true」，于是勾上「专业基础」会把其它学院一起打开（用户实测 bug）。 */
+function syncTrackFlags(){
+  if (!(notifyCfg.tracks instanceof Array)) notifyCfg.tracks = [];
+  var n = WEEKDAY_TRACKS.length;
+  while (notifyCfg.tracks.length < n) notifyCfg.tracks.push(true);
+  if (notifyCfg.tracks.length > n) notifyCfg.tracks.length = n;
+}
 function applySchedule(){
   var d = new Date();
   var key = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
@@ -1483,13 +1491,13 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.4.10';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.4.11';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 页面热更新（version.txt）的发行版 tag：主要用来取 index.html 附件，跟页面版本号走。
    程序本体（exe/apk）的下载 tag 在 program.txt 里单独记（= 程序本体版本），两者分开算；
    只有 program.txt 拿不到时才拿 RELEASE_TAG 兜底。 */
-var RELEASE_TAG = 'v2.4.10';
+var RELEASE_TAG = 'v2.4.11';
 var latestInfo = null;
 /* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
 var SHELL_SEEN_KEY = 'sqzy-seen-shell';
@@ -1515,7 +1523,7 @@ function loadCfg(){
   try{ var raw = safeGet(NOTIFY_KEY); if (raw) { var o = JSON.parse(raw);
     for (var k in notifyCfg) if (o[k] !== undefined) notifyCfg[k] = o[k];
     normCfg();
-    if (!(notifyCfg.tracks instanceof Array) || notifyCfg.tracks.length !== WEEKDAY_TRACKS.length) notifyCfg.tracks = WEEKDAY_TRACKS.map(function(){ return true; });
+    syncTrackFlags();
   } }catch(e){}
   try{ var f = safeGet(FIRED_KEY); if (f) firedKeys = JSON.parse(f) || {}; }catch(e){}
 }
@@ -1543,9 +1551,7 @@ function adoptCfgFromShell(){
       if (!st || !st.cfg || (st.t || 0) <= cfgStamp()) return;
       for (var k in notifyCfg) if (st.cfg[k] !== undefined) notifyCfg[k] = st.cfg[k];
       normCfg();
-      if (!(notifyCfg.tracks instanceof Array) || notifyCfg.tracks.length !== WEEKDAY_TRACKS.length){
-        notifyCfg.tracks = WEEKDAY_TRACKS.map(function(){ return true; });
-      }
+      syncTrackFlags();
       safeSet(NOTIFY_KEY, JSON.stringify(notifyCfg));
       safeSet(CFG_T_KEY, String(st.t || Date.now()));
       refreshSetUI();
@@ -2533,7 +2539,7 @@ function initSettings(){
       rebuildTemplates();
       _curDay = '';
       applySchedule();
-      if (notifyCfg.tracks.length !== TRACKS.length) notifyCfg.tracks = TRACKS.map(function(){ return true; });
+      syncTrackFlags();
       renderGantt();
       renderCards();
       renderVertical();
@@ -3126,6 +3132,90 @@ function setToday(v, showToast){
 /* ===== 休息段不高亮/不标"进行中" =====
    已在渲染层修正（renderNow 卡片循环跳过 free、甘特/竖版跳过 .free），DOM 兜底补丁不再需要。 */
 
+
+/* ===== 网页端下载引导 =====
+   线上页面在真实浏览器里只做引导：网页版没有通知、没有自启、也检查不了更新。
+   壳内不拦——桌面壳从 127.0.0.1 打开页面，安卓壳注入了 SQZY_ANDROID；
+   file:// 打开也不拦（那是自己下载的文件，不是网页端）。 */
+(function(){
+  function osKind(){
+    var ua = navigator.userAgent || '', p = navigator.platform || '';
+    if (/Android/i.test(ua)) return 'android';
+    if (/Windows|Win32|Win64|WOW64/i.test(ua) || /^Win/i.test(p)) return 'windows';
+    return '';
+  }
+  function inShell(){
+    /* 壳内（安卓注入了 SQZY_ANDROID）不拦；本机与内网地址也不拦：
+       桌面壳从 127.0.0.1 打开页面，开发/自动化测试也都在环回地址上跑，
+       真正会走到这里的只有「公网域名上的网页端」。 */
+    if (window.SQZY_ANDROID) return true;
+    var h = location.hostname;
+    if (!h) return true;
+    return h === 'localhost' || /^127\./.test(h) || /^\[::1\]$/.test(h)
+      || /^10\./.test(h) || /^192\.168\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h);
+  }
+  function css(){
+    var s = document.createElement('style');
+    s.textContent =
+      '#dlGate,#dlGate *{box-sizing:border-box}' +
+      '#dlGate{position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.72);display:flex;align-items:center;justify-content:center;padding:16px}' +
+      '#dlGate .box{background:#fff;border-radius:16px;max-width:430px;width:100%;max-height:100%;overflow:auto;padding:24px 20px 18px;box-shadow:0 24px 60px rgba(15,23,42,.35);text-align:center}' +
+      '#dlGate .ic{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#1d4ed8,#3b82f6);margin:0 auto 14px;display:flex;align-items:center;justify-content:center;font-size:26px}' +
+      '#dlGate h2{font-size:19px;margin:0 0 8px;color:#0f172a}' +
+      '#dlGate p{font-size:13px;line-height:1.75;color:#475569;margin:0 0 16px}' +
+      '#dlGate .go{display:block;width:100%;border:0;border-radius:11px;background:linear-gradient(135deg,#1d4ed8,#3b82f6);color:#fff;font-size:16px;font-weight:700;padding:14px;cursor:pointer;font-family:inherit;min-height:48px}' +
+      '#dlGate .hint{font-size:11.5px;color:#94a3b8;margin-top:12px;line-height:1.6}' +
+      '#dlGate .url{margin-top:8px;font-size:11px;color:#64748b;word-break:break-all;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px;user-select:all;-webkit-user-select:all}' +
+      '#dlGate .why{font-size:11.5px;color:#94a3b8;margin-top:14px;text-align:left;line-height:1.7}';
+    (document.head || document.documentElement).appendChild(s);
+  }
+  function open(kind){
+    var fallback = 'https://gitee.com/xyz-225648/sqbwzxsj/releases';
+    var go = function(info){
+      if (!info || !(info.tag || info.v)) { openExternal(fallback); return; }
+      programInfo = info;
+      openExternal(shellAssetUrl(info, kind));
+    };
+    if (programInfo) { go(programInfo); return; }
+    try { readRemoteText('program.txt', function(t){ go(parseVerText(t)); }); }
+    catch (e) { openExternal(fallback); }
+  }
+  function show(os){
+    if (document.getElementById('dlGate')) return;
+    css();
+    var isApk = os === 'android';
+    var g = document.createElement('div');
+    g.id = 'dlGate'; g.setAttribute('role', 'dialog'); g.setAttribute('aria-modal', 'true');
+    g.innerHTML = '<div class="box">' +
+      '<div class="ic">' + (isApk ? '📱' : '💻') + '</div>' +
+      '<h2>请下载' + (isApk ? '安卓' : 'Windows') + '版客户端</h2>' +
+      '<p>网页版只能看时间，不能提醒。装客户端才有<b>课前通知</b>、<b>开机自启</b>和<b>自动更新</b>，界面也是完整的横竖版排班。</p>' +
+      '<button class="go" id="dlGo" type="button">下载' + (isApk ? '安卓安装包（APK）' : 'Windows 安装包（EXE）') + '</button>' +
+      '<div class="hint">按钮没反应？长按/右键复制下面的直链，用浏览器或下载工具打开：</div>' +
+      '<div class="url" id="dlUrl">https://gitee.com/xyz-225648/sqbwzxsj/releases</div>' +
+      '<div class="why">装好后请从桌面图标或开始菜单启动，不要再从网页打开。</div>' +
+      '</div>';
+    (document.body || document.documentElement).appendChild(g);
+    document.documentElement.style.overflow = 'hidden';
+    g.querySelector('#dlGo').addEventListener('click', function(){ open(isApk ? 'apk' : 'exe'); });
+    try {
+      readRemoteText('program.txt', function(t){
+        var info = parseVerText(t);
+        if (!info) return;
+        var el = document.getElementById('dlUrl');
+        if (el) el.textContent = shellAssetUrl(info, isApk ? 'apk' : 'exe');
+      });
+    } catch (e) {}
+  }
+  function start(){
+    var os = osKind();
+    if (!os || inShell()) return;
+    if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
+    show(os);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else setTimeout(start, 0);
+})();
 
 /* ===== 休息段合并 v3（时间也合并）=====
    甘特 / 卡片 / 竖版三处渲染时已各自合并休息段并写对整段时间，DOM 兜底补丁不再需要。 */
