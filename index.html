@@ -384,6 +384,17 @@ if (/Android/i.test(navigator.userAgent || '')) document.documentElement.setAttr
   @media (max-width:1080px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
   @media (max-width:700px){.cards{grid-template-columns:1fr}.nowlist{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
+  /* 窄屏（一列布局）时学院卡片可折叠：头里已有「现在是什么 + 还剩多久」 */
+  .cards.collapsible .card-h{cursor:pointer;position:relative;padding-right:40px;
+    -webkit-tap-highlight-color:rgba(255,255,255,.18)}
+  .cards.collapsible .card-h::after{content:"";position:absolute;right:16px;top:50%;width:9px;height:9px;
+    border-right:2px solid currentColor;border-bottom:2px solid currentColor;opacity:.9;
+    transform:translateY(-68%) rotate(45deg);transition:transform .18s ease}
+  .cards.collapsible .card.closed .card-h::after{transform:translateY(-34%) rotate(-135deg)}
+  .cards.collapsible .card.closed .vtl,
+  .cards.collapsible .card.closed .card-note{display:none}
+  .cards.collapsible .card{transition:box-shadow .18s ease}
+  .cards.collapsible .card.closed{box-shadow:0 2px 9px rgba(15,23,42,.07)}
   @media print{
     body{background:#fff}
     .page{max-width:none;padding:0}
@@ -959,6 +970,55 @@ function renderCards(){
   cardItems = cards.map(function(c){ return [].slice.call(c.querySelectorAll('.vtl li')); });
   cardMeta  = cards.map(function(c){ return c.querySelector('.card-h .m'); });
   cardCd    = cards.map(function(c){ return c.querySelector('.card-h .cd'); });
+  applyCardCollapse();
+}
+
+/* ===================== 窄屏学院卡片折叠 =====================
+   一列布局时四张完整时间线排下来很长；卡片头已经有「现在是什么、还剩多久」，
+   所以默认收起，点卡头展开，选择记在本机（换宽度、换设备都还在）。 */
+var CARD_OPEN_KEY = 'sqzy-card-open';
+function cardOpenMap(){
+  try { var o = JSON.parse(localStorage.getItem(CARD_OPEN_KEY) || '{}'); return (o && typeof o === 'object') ? o : {}; }
+  catch (e) { return {}; }
+}
+function cardOpenSave(m){
+  try { localStorage.setItem(CARD_OPEN_KEY, JSON.stringify(m)); } catch (e) {}
+}
+function cardKeyOf(card){
+  var t = card.querySelector('.card-h .t');
+  return t ? t.textContent.trim() : '';
+}
+function applyCardCollapse(){
+  var el = document.getElementById('cards');
+  if (!el) return;
+  var cols = 1;
+  try { cols = (getComputedStyle(el).gridTemplateColumns || '').trim().split(/\s+/).length || 1; } catch (e) {}
+  var narrow = cols <= 1;
+  el.classList.toggle('collapsible', narrow);
+  var open = cardOpenMap();
+  [].slice.call(el.querySelectorAll('.card')).forEach(function(c){
+    if (!narrow){ c.classList.remove('closed'); return; }
+    c.classList.toggle('closed', open[cardKeyOf(c)] !== true);
+  });
+}
+function setCardOpen(card, isOpen){
+  if (!card) return;
+  card.classList.toggle('closed', !isOpen);
+  var m = cardOpenMap(); m[cardKeyOf(card)] = !!isOpen; cardOpenSave(m);
+}
+function bindCardCollapse(){
+  var el = document.getElementById('cards');
+  if (!el || el.dataset.collapseBound) return;
+  el.dataset.collapseBound = '1';
+  el.addEventListener('click', function(ev){
+    if (!el.classList.contains('collapsible')) return;
+    var h = ev.target && ev.target.closest ? ev.target.closest('.card-h') : null;
+    if (!h || !el.contains(h)) return;
+    var card = h.parentNode;
+    /* 卡头里可能有链接/按钮时不要抢事件 */
+    if (ev.target.closest('a,button,input,select,textarea')) return;
+    setCardOpen(card, card.classList.contains('closed'));
+  });
 }
 
 /* ===================== “现在”实时高亮 ===================== */
@@ -1349,6 +1409,7 @@ function bindNowBar(){
 function jumpToTrack(i){
   var card = document.querySelectorAll('#cards .card')[i];
   if (!card) return;
+  if (card.classList.contains('closed')) setCardOpen(card, true);
   /* 用 scrollIntoView：缩放（Ctrl+滚轮）后视觉像素与布局像素不是一回事，
      自己算 scrollTop 会算错，交给浏览器最稳。 */
   var y0 = window.pageYOffset;
@@ -1491,13 +1552,59 @@ function bindToTop(){
 
 /* ===================== 设置面板 & 通知 ===================== */
 var NOTIFY_KEY = 'sqzy-notify', FIRED_KEY = 'sqzy-notify-fired';
-var APP_VERSION = 'v2.4.11';   /* 版本号规范：V主.次.补丁（见 README） */
+/* ===== 访问统计 =====
+   支持百度统计与友盟（原 cnzz）两家，都是免费版；provider 或 id 留空就一个请求都不发。
+   记录的是「打开次数、设备与系统类型、下载点击」，不含个人信息，页面也不展示数字。
+   端类型分「桌面端 / 安卓端 / 网页端」，报表里能分清客户端与网页。 */
+var ANALYTICS = { provider: 'baidu', id: '82741c3130d9fc7b3a56769d658b3e75' };   /* 百度统计；清空 id 即停止上报 */
+function track(ev, label){
+  try {
+    if (!ANALYTICS || !ANALYTICS.id) return;
+    var e = String(ev), l = String(label || '');
+    if (ANALYTICS.provider === 'baidu' && window._hmt) window._hmt.push(['_trackEvent', e, l]);
+    else if (window._czc) window._czc.push(['_trackEvent', e, l]);
+  } catch (x) {}
+}
+function shellEnd(){
+  /* 壳内返回端名，网页端返回空串：壳内只发事件不发 PV，避免来源报表混进 127.0.0.1 */
+  if (window.SQZY_ANDROID) return '安卓端';
+  var h = location.hostname;
+  if (h === '127.0.0.1' || h === 'localhost') return '桌面端';
+  return '';
+}
+function trackEnd(){ return shellEnd() || '网页端'; }
+function initAnalytics(){
+  if (!ANALYTICS || !ANALYTICS.id) return;
+  try {
+    var id = encodeURIComponent(ANALYTICS.id);
+    if (ANALYTICS.provider === 'baidu'){
+      /* 百度统计官方写法：先占住 _hmt 队列，脚本加载前后上报都不丢。
+         壳内（exe / 安卓 App）关掉自动 PV：来源报表只留真实网页访问，
+         客户端使用量由事件「打开·桌面端 / 安卓端」精确统计。 */
+      window._hmt = window._hmt || [];
+      if (shellEnd()) window._hmt.push(['_setAutoPageview', false]);
+      var hm = document.createElement('script');
+      hm.async = true;
+      hm.src = 'https://hm.baidu.com/hm.js?' + id;
+      var first = document.getElementsByTagName('script')[0];
+      if (first && first.parentNode) first.parentNode.insertBefore(hm, first);
+      else (document.head || document.documentElement).appendChild(hm);
+    } else {
+      var sc = document.createElement('script');
+      sc.async = true;
+      sc.src = 'https://s9.cnzz.com/z_stat.php?id=' + id + '&web_id=' + id;
+      (document.head || document.documentElement).appendChild(sc);
+    }
+    setTimeout(function(){ track('打开', trackEnd()); }, 1500);
+  } catch (e) {}
+}
+var APP_VERSION = 'v2.4.15';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 页面热更新（version.txt）的发行版 tag：主要用来取 index.html 附件，跟页面版本号走。
    程序本体（exe/apk）的下载 tag 在 program.txt 里单独记（= 程序本体版本），两者分开算；
    只有 program.txt 拿不到时才拿 RELEASE_TAG 兜底。 */
-var RELEASE_TAG = 'v2.4.11';
+var RELEASE_TAG = 'v2.4.15';
 var latestInfo = null;
 /* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
 var SHELL_SEEN_KEY = 'sqzy-seen-shell';
@@ -1889,6 +1996,7 @@ function shellDownloadUrl(info){
 /* 桌面版一键更新：走本地壳的 /download（下载+校验 sha256）→ /apply（退出后自我替换并重启）。
    与安卓的「一键下载安装包」对应 —— 电脑上也能点一下就换好，不用自己去找安装包。 */
 function downloadExeSmart(info){
+  track('下载', 'Windows·' + trackEnd());
   var base = apiBase();
   var want = normVer((info && info.exe) || (info && info.v) || '');
   var url = shellAssetUrl(info || {}, 'exe');
@@ -1988,6 +2096,7 @@ function fetchApkByMirror(info, i, cb){
   }).catch(function(){ fetchApkByMirror(info, i + 1, cb); });
 }
 function downloadApkSmart(info, manual){
+  track('下载', '安卓·' + trackEnd());
   /* 有原生桥 → 交给系统下载器（按目标版本命名，存下来就是 .apk）；没有 → 走镜像自己保存；
      两条都不行 → 打开 gitee 附件并说明改名办法。
      manual=true 且壳 < 2.4.0 时直接走浏览器：老壳系统下载器用“当前安装版本”起名、
@@ -2391,6 +2500,9 @@ function initSettings(){
             '<span style="font-size:11px;color:#94a3b8;margin-left:6px">勾选后立即生效</span></label></div>' +
           '<div class="setnote">四学院是默认视图；「专业基础」是可选项，关掉它就回到原来的四列。</div>' +
           '<div class="setsec">关于</div>' +
+          (ANALYTICS && ANALYTICS.id
+            ? '<div class="setnote">访问统计：只记录打开次数、设备与系统类型、下载点击，不含个人信息，数字不对外展示。</div>'
+            : '') +
           '<div class="setrow" style="gap:14px">' +
             '<a href="https://github.com/xyz-225648/sqbwzxsj" id="aboutGh" style="font-size:12px;color:#1d4ed8;text-decoration:none">GitHub 项目主页</a>' +
             '<a href="https://gitee.com/xyz-225648/sqbwzxsj" id="aboutGitee" style="font-size:12px;color:#c2410c;text-decoration:none">Gitee 项目主页</a>' +
@@ -2677,6 +2789,7 @@ function initZoom(){
 
 /* ===================== 布局 ===================== */
 function relayout(){
+  if (typeof applyCardCollapse === 'function') applyCardCollapse();
   if (ghostEl) ghostEl.classList.remove('on');
   if (typeof updateVtNow === 'function'){
     var dm = (new Date()).getHours()*60 + (new Date()).getMinutes();
@@ -3184,6 +3297,7 @@ function setToday(v, showToast){
     if (document.getElementById('dlGate')) return;
     css();
     var isApk = os === 'android';
+    track('网页引导', isApk ? '安卓' : 'Windows');
     var g = document.createElement('div');
     g.id = 'dlGate'; g.setAttribute('role', 'dialog'); g.setAttribute('aria-modal', 'true');
     g.innerHTML = '<div class="box">' +
@@ -3197,7 +3311,10 @@ function setToday(v, showToast){
       '</div>';
     (document.body || document.documentElement).appendChild(g);
     document.documentElement.style.overflow = 'hidden';
-    g.querySelector('#dlGo').addEventListener('click', function(){ open(isApk ? 'apk' : 'exe'); });
+    g.querySelector('#dlGo').addEventListener('click', function(){
+      track('下载', (isApk ? '网页·安卓' : '网页·Windows'));
+      open(isApk ? 'apk' : 'exe');
+    });
     try {
       readRemoteText('program.txt', function(t){
         var info = parseVerText(t);
@@ -3215,6 +3332,23 @@ function setToday(v, showToast){
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else setTimeout(start, 0);
+})();
+
+if (typeof initAnalytics === 'function'){
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initAnalytics);
+  else setTimeout(initAnalytics, 0);
+}
+
+(function(){
+  if (typeof bindCardCollapse !== 'function') return;
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindCardCollapse);
+  else bindCardCollapse();
+  /* 断点跨过时补一次：一列布局才折叠，resize 之外还有旋屏/分屏/缩放 */
+  try {
+    var mq = window.matchMedia('(max-width: 700px)');
+    var onMq = function(){ if (typeof applyCardCollapse === 'function') applyCardCollapse(); };
+    if (mq.addEventListener) mq.addEventListener('change', onMq); else if (mq.addListener) mq.addListener(onMq);
+  } catch (e) {}
 })();
 
 /* ===== 休息段合并 v3（时间也合并）=====
