@@ -1598,13 +1598,13 @@ function initAnalytics(){
     setTimeout(function(){ track('打开', trackEnd()); }, 1500);
   } catch (e) {}
 }
-var APP_VERSION = 'v2.4.15';   /* 版本号规范：V主.次.补丁（见 README） */
+var APP_VERSION = 'v2.4.16';   /* 版本号规范：V主.次.补丁（见 README） */
 var SEEN_VER_KEY = 'sqzy-seen-ver';
 var UPDATE_BASE = 'https://gitee.com/xyz-225648/sqbwzxsj/raw/master/';
 /* 页面热更新（version.txt）的发行版 tag：主要用来取 index.html 附件，跟页面版本号走。
    程序本体（exe/apk）的下载 tag 在 program.txt 里单独记（= 程序本体版本），两者分开算；
    只有 program.txt 拿不到时才拿 RELEASE_TAG 兜底。 */
-var RELEASE_TAG = 'v2.4.15';
+var RELEASE_TAG = 'v2.4.16';
 var latestInfo = null;
 /* 程序本体（exe/apk）版本：网页自己能热更新，程序本体不能 —— 所以要单独比一次 */
 var SHELL_SEEN_KEY = 'sqzy-seen-shell';
@@ -3272,7 +3272,10 @@ function setToday(v, showToast){
     s.textContent =
       '#dlGate,#dlGate *{box-sizing:border-box}' +
       '#dlGate{position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.72);display:flex;align-items:center;justify-content:center;padding:16px}' +
-      '#dlGate .box{background:#fff;border-radius:16px;max-width:430px;width:100%;max-height:100%;overflow:auto;padding:24px 20px 18px;box-shadow:0 24px 60px rgba(15,23,42,.35);text-align:center}' +
+      '#dlGate .box{position:relative;background:#fff;border-radius:16px;max-width:430px;width:100%;max-height:100%;overflow:auto;padding:24px 20px 18px;box-shadow:0 24px 60px rgba(15,23,42,.35);text-align:center}' +
+      '#dlGate .x{position:absolute;top:2px;right:2px;width:40px;height:40px;border:0;background:transparent;color:#cbd5e1;font-size:15px;line-height:1;cursor:pointer;font-family:inherit;border-radius:10px;-webkit-tap-highlight-color:transparent}' +
+      '#dlGate .x:hover{color:#94a3b8}' +
+      '#dlGate .x:active{color:#64748b}' +
       '#dlGate .ic{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#1d4ed8,#3b82f6);margin:0 auto 14px;display:flex;align-items:center;justify-content:center;font-size:26px}' +
       '#dlGate h2{font-size:19px;margin:0 0 8px;color:#0f172a}' +
       '#dlGate p{font-size:13px;line-height:1.75;color:#475569;margin:0 0 16px}' +
@@ -3301,6 +3304,7 @@ function setToday(v, showToast){
     var g = document.createElement('div');
     g.id = 'dlGate'; g.setAttribute('role', 'dialog'); g.setAttribute('aria-modal', 'true');
     g.innerHTML = '<div class="box">' +
+      '<button class="x" id="dlClose" type="button" aria-label="关闭" title="关闭">✕</button>' +
       '<div class="ic">' + (isApk ? '📱' : '💻') + '</div>' +
       '<h2>请下载' + (isApk ? '安卓' : 'Windows') + '版客户端</h2>' +
       '<p>网页版只能看时间，不能提醒。装客户端才有<b>课前通知</b>、<b>开机自启</b>和<b>自动更新</b>，界面也是完整的横竖版排班。</p>' +
@@ -3311,6 +3315,16 @@ function setToday(v, showToast){
       '</div>';
     (document.body || document.documentElement).appendChild(g);
     document.documentElement.style.overflow = 'hidden';
+    /* 关掉就关掉：本次会话不再弹（刷新也记住），别把人反复堵在同一条提示上 */
+    var close = function(){
+      try { sessionStorage.setItem('sqzy-dlgate-off', '1'); } catch (e) {}
+      if (g.parentNode) g.parentNode.removeChild(g);
+      document.documentElement.style.overflow = '';
+      document.removeEventListener('keydown', onKey);
+    };
+    var onKey = function(ev){ if (ev.key === 'Escape') close(); };
+    g.querySelector('#dlClose').addEventListener('click', close);
+    document.addEventListener('keydown', onKey);
     g.querySelector('#dlGo').addEventListener('click', function(){
       track('下载', (isApk ? '网页·安卓' : '网页·Windows'));
       open(isApk ? 'apk' : 'exe');
@@ -3327,6 +3341,7 @@ function setToday(v, showToast){
   function start(){
     var os = osKind();
     if (!os || inShell()) return;
+    try { if (sessionStorage.getItem('sqzy-dlgate-off') === '1') return; } catch (e) {}
     if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
     show(os);
   }
